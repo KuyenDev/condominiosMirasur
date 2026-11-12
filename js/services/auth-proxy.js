@@ -120,3 +120,4 @@ export async function generateAccountHashEntry(username, password) {
     hash: `pbkdf2$100000$${toHex(salt)}$${toHex(derived)}`
   };
 }
+
