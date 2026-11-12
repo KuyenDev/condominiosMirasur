@@ -20,6 +20,7 @@ export const DEFAULT_CONFIG = {
   subtituloApp: 'Organización metódica de cartas y visitas en condominios y torres',
   distanciaMinimaDefault: 2,
   maxDeptosDefault: 5,
+  authEndpoint: '',
   github: {
     owner: '',
     repo: '',
@@ -85,7 +86,10 @@ export function notify() {
  * Verificación real en capa de lógica para impedir mutaciones no autorizadas.
  */
 export function isAdminAuthenticated() {
-  return Boolean(state.admin.authenticated && (state.admin.mode === 'github' || state.admin.mode === 'local-dev'));
+  return Boolean(
+    state.admin.authenticated &&
+      (state.admin.mode === 'github' || state.admin.mode === 'proxy' || state.admin.mode === 'local-dev')
+  );
 }
 
 function assertAdmin() {
@@ -690,6 +694,7 @@ export function updateConfiguracionAdmin(patch) {
     subtituloApp: String(patch.subtituloApp ?? state.configuracion.subtituloApp).trim(),
     distanciaMinimaDefault: Math.max(0, Math.min(20, parseInt(patch.distanciaMinimaDefault ?? state.configuracion.distanciaMinimaDefault, 10) || 2)),
     maxDeptosDefault: Math.max(1, Math.min(50, parseInt(patch.maxDeptosDefault ?? state.configuracion.maxDeptosDefault, 10) || 5)),
+    authEndpoint: String(patch.authEndpoint ?? state.configuracion.authEndpoint ?? '').trim().replace(/\/+$/, ''),
     github: {
       owner: String(patch.github?.owner ?? state.configuracion.github?.owner ?? '').trim(),
       repo: String(patch.github?.repo ?? state.configuracion.github?.repo ?? '').trim(),

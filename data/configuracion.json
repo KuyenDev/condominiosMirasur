@@ -6,6 +6,7 @@
   "subtituloApp": "Organización metódica de cartas y visitas en condominios y torres",
   "distanciaMinimaDefault": 2,
   "maxDeptosDefault": 5,
+  "authEndpoint": "",
   "github": {
     "owner": "KuyenDev",
     "repo": "condominiosMirasur",

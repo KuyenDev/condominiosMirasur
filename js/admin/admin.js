@@ -24,6 +24,13 @@ import {
   triggerJsonDownload
 } from '../services/database.js';
 import {
+  authenticateWithProxy,
+  clearProxySession,
+  commitDataViaProxy,
+  fetchDataViaProxy,
+  hasActiveProxySession
+} from '../services/auth-proxy.js';
+import {
   authenticateGitHubSession,
   clearGitHubSession,
   commitDataAtomically,
@@ -105,6 +112,57 @@ export async function loginAdminWithGitHub({ owner, repo, branch, token }) {
   return authResult;
 }
 
+export async function loginAdminWithAccount({ endpoint, username, password }) {
+  const authResult = await authenticateWithProxy({ endpoint, username, password });
+
+  setAdminSession({
+    authenticated: true,
+    mode: 'proxy',
+    username: authResult.username,
+    canPush: true
+  });
+
+  setSyncState({
+    repoPrivate: authResult.repoPrivate
+  });
+
+  if (!state.configuracion.authEndpoint) {
+    state.configuracion.authEndpoint = authResult.endpoint;
+  }
+
+  try {
+    const latest = await fetchDataViaProxy();
+    const norm = normalizeDataset({
+      condominios: latest.condominios,
+      hermanos: latest.hermanos,
+      configuracion: latest.configuracion || state.configuracion
+    });
+    if (!norm.configuracion.authEndpoint) {
+      norm.configuracion.authEndpoint = authResult.endpoint;
+    }
+
+    const now = new Date().toISOString();
+    setInitialDataset(norm, {
+      source: 'remote',
+      lastSyncedAt: now,
+      isStale: false,
+      dirtyCount: 0,
+      remoteHeadSha: latest.headSha,
+      repoPrivate: latest.repoPrivate
+    });
+    saveCachedSnapshot({
+      condominios: state.condominios,
+      hermanos: state.hermanos,
+      configuracion: state.configuracion,
+      syncedAt: now
+    });
+  } catch (err) {
+    console.warn('No se pudo leer rama tras login de cuenta:', err);
+  }
+
+  return authResult;
+}
+
 export function loginAdminLocalDev() {
   if (!isLocalDevEnvironment()) {
     throw new Error('El modo de pruebas local solo está disponible en localhost.');
@@ -131,6 +189,7 @@ export async function logoutAdmin() {
   }
 
   clearGitHubSession();
+  clearProxySession();
   setAdminSession({
     authenticated: false,
     mode: null,
@@ -179,8 +238,11 @@ export async function logoutAdmin() {
 }
 
 export async function syncFromGitHubAdmin() {
-  if (!hasActiveGitHubSession()) {
-    throw new Error('Debes iniciar sesión con GitHub para sincronizar.');
+  const isProxy = state.admin.mode === 'proxy' && hasActiveProxySession();
+  const isGitHub = state.admin.mode === 'github' && hasActiveGitHubSession();
+
+  if (!isProxy && !isGitHub) {
+    throw new Error('Debes iniciar sesión para sincronizar con el repositorio.');
   }
 
   if (state.sync.dirtyCount > 0) {
@@ -193,7 +255,7 @@ export async function syncFromGitHubAdmin() {
     if (!ok) return false;
   }
 
-  const latest = await fetchDataFromGitHubApi();
+  const latest = isProxy ? await fetchDataViaProxy() : await fetchDataFromGitHubApi();
   const now = new Date().toISOString();
   setInitialDataset(
     {
@@ -219,17 +281,22 @@ export async function syncFromGitHubAdmin() {
 }
 
 export async function publishToGitHubAdmin(customMessage = '') {
-  if (!isAdminAuthenticated() || state.admin.mode !== 'github' || !hasActiveGitHubSession()) {
-    throw new Error('Inicia sesión con tu token de GitHub para publicar cambios.');
+  const isProxy = state.admin.mode === 'proxy' && hasActiveProxySession();
+  const isGitHub = state.admin.mode === 'github' && hasActiveGitHubSession();
+
+  if (!isAdminAuthenticated() || (!isProxy && !isGitHub)) {
+    throw new Error('Inicia sesión administrativa para publicar cambios en GitHub.');
   }
 
   const isPublicRepo = state.sync.repoPrivate === false;
   const hideContacts = state.configuracion?.privacidad?.ocultarContactoEnRepoPublico !== false;
   const sanitizePublicPrivacy = isPublicRepo && hideContacts;
 
-  const { owner, repo, branch } = getActiveRepoConfig();
-  if (!state.configuracion.github.owner || !state.configuracion.github.repo) {
-    state.configuracion.github = { owner, repo, branch };
+  if (isGitHub) {
+    const { owner, repo, branch } = getActiveRepoConfig();
+    if (!state.configuracion.github.owner || !state.configuracion.github.repo) {
+      state.configuracion.github = { owner, repo, branch };
+    }
   }
 
   const { condominiosPayload, hermanosPayload, configuracionPayload, updatedAt } = buildDataPayloads(state, {
@@ -238,7 +305,8 @@ export async function publishToGitHubAdmin(customMessage = '') {
 
   const message = String(customMessage || '').trim() || `Actualizar territorios (${updatedAt.slice(0, 10)})`;
 
-  const res = await commitDataAtomically({
+  const commitFn = isProxy ? commitDataViaProxy : commitDataAtomically;
+  const res = await commitFn({
     condominiosPayload,
     hermanosPayload,
     configuracionPayload,

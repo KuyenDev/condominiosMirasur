@@ -137,7 +137,25 @@ Todas las rutas del proyecto son relativas (`./`), por lo que funciona en ambos 
 
 ## 8. Cómo configurar y usar el Panel de Administración
 
-### Crear tu token de acceso (una sola vez)
+Existen dos métodos compatibles para iniciar sesión como administrador (puedes tener ambos activos a la vez):
+
+### Opción A: Cuentas con Usuario y Contraseña (Cloudflare Worker gratuito — recomendado para varios administradores)
+Permite crear cuentas como `RLuna` con su propia contraseña para entrar y editar todo sin compartir tu Token de GitHub ni exponer contraseñas en archivos públicos.
+
+1. Crea una cuenta gratuita en [Cloudflare Workers](https://workers.cloudflare.com/) y crea un nuevo Worker pegando el código de `worker/cloudflare-worker.js`.
+2. En **Settings ➔ Variables and Secrets** del Worker, configura:
+   - **`GITHUB_OWNER`** (texto): tu usuario GitHub (ej. `KuyenDev`).
+   - **`GITHUB_REPO`** (texto): nombre del repositorio (ej. `condominiosMirasur`).
+   - **`GITHUB_BRANCH`** (texto): `main`.
+   - **`ALLOWED_ORIGIN`** (texto): tu URL de GitHub Pages sin barra final (ej. `https://kuyendev.github.io`).
+   - **`GITHUB_TOKEN`** (**Secret**): un Fine-Grained Token tuyo con permiso `Contents: Read and write` solo para este repositorio.
+   - **`SESSION_SECRET`** (**Secret**): una frase aleatoria larga y secreta (mínimo 32 caracteres).
+   - **`ADMIN_USERS_JSON`** (**Secret**): el JSON de usuarios y hashes generado desde el **Panel Admin ➔ Cuentas con Usuario y Contraseña** (por ejemplo `[{"username":"RLuna","hash":"pbkdf2$100000$..."}]`).
+3. Copia la URL pública de tu Worker (`https://....workers.dev`).
+4. Entra una vez a **🔐 Admin** con tu **Token de GitHub** (Opción B), pega la URL del Worker en **Configuración de la Congregación ➔ URL del servidor de acceso**, guarda en sesión y pulsa **☁️ Publicar cambios en GitHub**.
+5. Desde ese momento, cualquier hermano con cuenta en `ADMIN_USERS_JSON` solo escribe su **Usuario** y **Contraseña** en **🔐 Admin**.
+
+### Opción B: Token directo de GitHub (uso técnico / respaldo)
 1. Inicia sesión en tu cuenta de GitHub (la dueña o administradora del repositorio).
 2. Ve a **Settings ➔ Developer settings ➔ Personal access tokens ➔ Fine-grained tokens**.
 3. Pulsa **Generate new token**.
