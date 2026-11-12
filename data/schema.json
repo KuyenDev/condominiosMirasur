@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Esquema de Datos - Gestor de Condominios",
+  "description": "Documentación estructural de los archivos JSON del directorio data/.",
+  "files": {
+    "condominios.json": {
+      "type": "object",
+      "required": ["version", "condominios"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "updatedAt": { "type": ["string", "null"], "format": "date-time" },
+        "condominios": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "nombre", "edificios"],
+            "properties": {
+              "id": { "type": "string" },
+              "nombre": { "type": "string" },
+              "direccion": { "type": "string" },
+              "administrador": { "type": "string" },
+              "notas": { "type": "string" },
+              "edificios": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["id", "nombre", "deptos"],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "nombre": { "type": "string" },
+                    "distanciaMinima": { "type": "integer", "minimum": 0, "maximum": 20 },
+                    "deptos": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "numero", "piso", "estado"],
+                        "properties": {
+                          "id": { "type": "string" },
+                          "numero": { "type": "string" },
+                          "piso": { "type": "integer" },
+                          "estado": { "type": "string", "enum": ["pendiente", "completado"] },
+                          "asignadoId": { "type": ["string", "null"] },
+                          "asignadoA": { "type": ["string", "null"] },
+                          "fijo": { "type": "boolean" },
+                          "excluido": { "type": "boolean" },
+                          "motivoExcluido": { "type": ["string", "null"] },
+                          "nota": { "type": "string" },
+                          "fechaEstado": { "type": ["string", "null"] }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "hermanos.json": {
+      "type": "object",
+      "required": ["version", "hermanos"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "updatedAt": { "type": ["string", "null"], "format": "date-time" },
+        "hermanos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "nombre"],
+            "properties": {
+              "id": { "type": "string" },
+              "nombre": { "type": "string" },
+              "contacto": { "type": "string", "description": "Omitido automáticamente en repositorios públicos si privacidad.ocultarContactoEnRepoPublico está activo." },
+              "torreAsignada": { "type": "string" },
+              "colorId": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "configuracion.json": {
+      "type": "object",
+      "required": ["version"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "updatedAt": { "type": ["string", "null"] },
+        "congregacion": { "type": "string" },
+        "tituloApp": { "type": "string" },
+        "subtituloApp": { "type": "string" },
+        "distanciaMinimaDefault": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "maxDeptosDefault": { "type": "integer", "minimum": 1, "maximum": 50 },
+        "github": {
+          "type": "object",
+          "properties": {
+            "owner": { "type": "string" },
+            "repo": { "type": "string" },
+            "branch": { "type": "string" }
+          }
+        },
+        "privacidad": {
+          "type": "object",
+          "properties": {
+            "ocultarContactoEnRepoPublico": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  }
+}
+

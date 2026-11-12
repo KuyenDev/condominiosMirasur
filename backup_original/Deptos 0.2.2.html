@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor de Predicación en Condominios</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen p-3 sm:p-6 antialiased selection:bg-indigo-600 selection:text-white">
+    <div class="max-w-6xl mx-auto space-y-6">
+
+        <!-- Banner Encabezado Modo Claro -->
+        <header class="bg-white rounded-3xl shadow-lg overflow-hidden relative border border-slate-200/80">
+            <div class="h-44 sm:h-52 w-full bg-cover bg-center relative" style="background-image: linear-gradient(to right, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.65)), url('https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1200&q=80');">
+                <div class="absolute inset-0 flex flex-col sm:flex-row justify-between items-start sm:items-center p-6 sm:p-8 bg-gradient-to-t from-white via-transparent to-transparent">
+                    <div class="space-y-1.5">
+                        <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/80 uppercase tracking-widest shadow-xs">
+                            <span class="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></span> JW.ORG • Predicación en Condominios
+                        </span>
+                        <h1 class="text-2xl sm:text-4xl font-extrabold tracking-tight text-slate-900">GESTOR DE CONDOMINIOS</h1>
+                        <p class="text-xs sm:text-sm text-slate-600 font-medium">Organización metódica de cartas y visitas en condominios y torres</p>
+                    </div>
+                    
+                    <!-- Navegación de Pestañas -->
+                    <div class="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 mt-4 sm:mt-0 shadow-sm">
+                        <button onclick="cambiarPestana('territorios')" id="btn-tab-territorios" class="px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all bg-indigo-600 text-white shadow-md shadow-indigo-600/20">Territorios</button>
+                        <button onclick="cambiarPestana('hermanos')" id="btn-tab-hermanos" class="px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all text-slate-600 hover:text-slate-900 hover:bg-slate-200/60">Hermanos</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- PESTAÑA 1: TERRITORIOS -->
+        <div id="tab-territorios" class="space-y-6">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl shadow-sm border border-slate-200">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-900">Directorio de Condominios</h2>
+                    <p class="text-xs text-slate-500 mt-0.5">Selecciona un condominio para abrir su ventana interactiva de gestión</p>
+                </div>
+                <button onclick="abrirModalCondominio()" class="bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white font-bold px-5 py-2.5 rounded-2xl shadow-md shadow-indigo-600/20 transition-all duration-200 flex items-center justify-center gap-2 text-xs sm:text-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+                    Nuevo Condominio
+                </button>
+            </div>
+            
+            <div id="app-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                <!-- Se llena dinámicamente -->
+            </div>
+        </div>
+
+        <!-- PESTAÑA 2: HERMANOS -->
+        <div id="tab-hermanos" class="space-y-6 hidden">
+            <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-4">
+                <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-slate-100 pb-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-900">Registro de Publicadores / Hermanos</h2>
+                        <p class="text-xs text-slate-500 mt-0.5">Administra los integrantes, sus colores de identificación y torres fijas.</p>
+                    </div>
+                    <button onclick="abrirModalHermano()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2.5 rounded-2xl text-xs sm:text-sm shadow-md shadow-indigo-600/20 transition-all">+ Agregar Hermano</button>
+                </div>
+                <div id="hermanos-container" class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
+                    <!-- Se llena dinámicamente -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal General (Superpuesto en nivel superior z-[60]) -->
+    <div id="modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs hidden flex items-center justify-center p-4 z-[60]">
+        <div id="modal-content" class="bg-white text-slate-800 rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl space-y-4 border border-slate-100 animate-in fade-in zoom-in duration-150">
+            <h3 id="modal-title" class="text-lg font-bold text-slate-900">Título</h3>
+            <div id="modal-body" class="space-y-4 max-h-[70vh] overflow-y-auto pr-1 text-slate-700"></div>
+            <div id="modal-footer" class="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button onclick="cerrarModal()" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-700 font-bold text-xs sm:text-sm transition">Cancelar</button>
+                <button id="modal-btn-guardar" onclick="guardarModal()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs sm:text-sm transition shadow-md shadow-indigo-600/20">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ventana Emergente Operativa de Condominio -->
+    <div id="modal-condo-operativo" class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs hidden flex items-center justify-center p-2 sm:p-5 z-30">
+        <div id="condo-modal-box" class="bg-slate-50 rounded-3xl w-full max-w-5xl h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden transition-all duration-200">
+            <!-- Header Operativo -->
+            <div class="bg-white text-slate-900 p-4 sm:p-6 flex justify-between items-center border-b border-slate-200 shrink-0">
+                <div class="space-y-0.5">
+                    <span class="text-[10px] uppercase font-bold tracking-widest text-indigo-600">Panel de Control</span>
+                    <h2 id="operativo-condo-nombre" class="text-lg sm:text-2xl font-black">Nombre del Condominio</h2>
+                    <p id="operativo-condo-info" class="text-xs text-slate-500">Dirección y Administración</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="operativo-btn-editar" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-semibold transition border border-slate-200">⚙️ Configurar</button>
+                    <button onclick="abrirModalEdificio(condoOperativoId)" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition shadow-md shadow-indigo-600/20">+ Torre</button>
+                    <button onclick="toggleMaximizarModal('condo-modal-box')" title="Maximizar / Restaurar" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl text-xs font-bold transition border border-slate-200">⤢</button>
+                    <button onclick="cerrarModalOperativo()" class="bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 px-3 py-2 rounded-xl text-sm font-bold transition">✕</button>
+                </div>
+            </div>
+
+            <!-- Contenido del Condominio -->
+            <div id="operativo-condo-body" class="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100/60 space-y-6">
+                <!-- Se llena dinámicamente -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Ventana Operativa de Torre Específica (Nivel intermedio z-40) -->
+    <div id="modal-torre-operativo" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs hidden flex items-center justify-center p-2 sm:p-5 z-40">
+        <div id="torre-modal-box" class="bg-slate-50 rounded-3xl w-full max-w-5xl h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden transition-all duration-200">
+            <!-- Header Operativo Torre -->
+            <div class="bg-indigo-900 text-white p-4 sm:p-6 flex justify-between items-center border-b border-indigo-950 shrink-0">
+                <div class="space-y-0.5">
+                    <span id="operativo-torre-condo-tag" class="text-[10px] uppercase font-bold tracking-widest text-indigo-200">Condominio</span>
+                    <h2 id="operativo-torre-nombre" class="text-lg sm:text-2xl font-black text-white">Nombre de la Torre</h2>
+                    <p id="operativo-torre-stats" class="text-xs text-indigo-100">Avance y detalles</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="torre-btn-excluir" class="bg-indigo-800 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-semibold transition border border-indigo-700">🚫 Excluir</button>
+                    <button id="torre-btn-asignar" class="bg-white text-indigo-900 hover:bg-indigo-50 px-4 py-2 rounded-xl text-xs font-bold transition shadow-md">👥 Asignar</button>
+                    <button onclick="toggleMaximizarModal('torre-modal-box')" title="Maximizar / Restaurar" class="bg-indigo-800 hover:bg-indigo-700 text-white px-3 py-2 rounded-xl text-xs font-bold transition border border-indigo-700">⤢ Maximizar</button>
+                    <button onclick="cerrarModalTorreOperativo()" class="bg-indigo-800 hover:bg-rose-600 text-indigo-100 hover:text-white px-3 py-2 rounded-xl text-sm font-bold transition">✕</button>
+                </div>
+            </div>
+
+            <!-- Contenido de Trabajo de la Torre -->
+            <div id="operativo-torre-body" class="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100 space-y-6">
+                <!-- Se llena dinámicamente -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Script de Gestión Completo -->
+    <script>
+        let datos = JSON.parse(localStorage.getItem('predicacion_condominios')) || [];
+        let hermanos = JSON.parse(localStorage.getItem('predicacion_hermanos')) || [];
+        let modalContext = { tipo: '', condoId: null, edificioId: null, hermanoId: null };
+        let condoOperativoId = null;
+        let torreOperativaId = null;
+
+        const paletaColores = [
+            { nombre: 'Índigo', clase: 'bg-indigo-100 border-indigo-300 text-indigo-900' },
+            { nombre: 'Esmeralda', clase: 'bg-emerald-100 border-emerald-300 text-emerald-900' },
+            { nombre: 'Ámbar', clase: 'bg-amber-100 border-amber-300 text-amber-900' },
+            { nombre: 'Rosa', clase: 'bg-rose-100 border-rose-300 text-rose-900' },
+            { nombre: 'Cian', clase: 'bg-cyan-100 border-cyan-300 text-cyan-900' },
+            { nombre: 'Púrpura', clase: 'bg-purple-100 border-purple-300 text-purple-900' },
+            { nombre: 'Azul', clase: 'bg-blue-100 border-blue-300 text-blue-900' },
+            { nombre: 'Violeta', clase: 'bg-violet-100 border-violet-300 text-violet-900' },
+            { nombre: 'Naranja', clase: 'bg-orange-100 border-orange-300 text-orange-900' },
+            { nombre: 'Lima', clase: 'bg-lime-100 border-lime-300 text-lime-900' },
+            { nombre: 'Fucsia', clase: 'bg-fuchsia-100 border-fuchsia-300 text-fuchsia-900' },
+            { nombre: 'Pizarra', clase: 'bg-slate-200 border-slate-400 text-slate-900' }
+        ];
+
+        function guardarStorage() {
+            localStorage.setItem('predicacion_condominios', JSON.stringify(datos));
+            localStorage.setItem('predicacion_hermanos', JSON.stringify(hermanos));
+            render();
+        }
+
+        function cambiarPestana(pestana) {
+            const tabTerritorios = document.getElementById('tab-territorios');
+            const tabHermanos = document.getElementById('tab-hermanos');
+            const btnTerritorios = document.getElementById('btn-tab-territorios');
+            const btnHermanos = document.getElementById('btn-tab-hermanos');
+
+            if (pestana === 'territorios') {
+                tabTerritorios.classList.remove('hidden');
+                tabHermanos.classList.add('hidden');
+                btnTerritorios.className = 'px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all bg-indigo-600 text-white shadow-md shadow-indigo-600/20';
+                btnHermanos.className = 'px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all text-slate-600 hover:text-slate-900 hover:bg-slate-200/60';
+            } else {
+                tabHermanos.classList.remove('hidden');
+                tabTerritorios.classList.add('hidden');
+                btnHermanos.className = 'px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all bg-indigo-600 text-white shadow-md shadow-indigo-600/20';
+                btnTerritorios.className = 'px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all text-slate-600 hover:text-slate-900 hover:bg-slate-200/60';
+            }
+            render();
+        }
+
+        function render() {
+            renderTerritorios();
+            renderHermanos();
+            if (condoOperativoId) renderModalOperativo(condoOperativoId);
+            if (torreOperativaId && condoOperativoId) renderModalTorreOperativo(condoOperativoId, torreOperativaId);
+        }
+
+        function renderTerritorios() {
+            const container = document.getElementById('app-container');
+            if (datos.length === 0) {
+                container.className = "col-span-full";
+                container.innerHTML = `
+                    <div class="bg-white rounded-3xl p-12 text-center shadow-sm border border-slate-200 max-w-lg mx-auto space-y-4">
+                        <div class="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto text-2xl border border-indigo-100">🏢</div>
+                        <p class="text-slate-500 text-sm font-medium">No hay condominios registrados aún.</p>
+                        <button onclick="abrirModalCondominio()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl text-xs transition shadow-md shadow-indigo-600/20">Crear el primer condominio</button>
+                    </div>`;
+                return;
+            }
+
+            container.className = "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5";
+            container.innerHTML = datos.map(condo => {
+                const totalTorres = condo.edificios.length;
+                let totalDeptos = 0;
+                let completadosTotal = 0;
+
+                condo.edificios.forEach(e => {
+                    const activos = e.deptos.filter(d => !d.excluido);
+                    totalDeptos += activos.length;
+                    completadosTotal += activos.filter(d => d.estado === 'completado').length;
+                });
+
+                const porcentajeGlobal = totalDeptos > 0 ? Math.round((completadosTotal / totalDeptos) * 100) : 0;
+
+                return `
+                    <div onclick="abrirModalOperativo('${condo.id}')" class="bg-white border border-slate-200/80 hover:border-indigo-400 rounded-3xl p-5 flex flex-col justify-between space-y-4 shadow-xs hover:shadow-md cursor-pointer transition-all duration-200 group">
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-start border-b border-slate-100 pb-3">
+                                <div>
+                                    <h3 class="font-bold text-slate-900 text-lg group-hover:text-indigo-600 transition-colors leading-tight">${condo.nombre}</h3>
+                                    <p class="text-xs text-slate-500 font-medium mt-0.5">${condo.direccion || 'Sin dirección registrada'}</p>
+                                </div>
+                                <span class="bg-indigo-50 text-indigo-700 text-[11px] font-bold px-3 py-1 rounded-xl border border-indigo-100 shrink-0">
+                                    ${totalTorres} ${totalTorres === 1 ? 'Torre' : 'Torres'}
+                                </span>
+                            </div>
+
+                            <div class="space-y-1.5">
+                                <div class="flex justify-between text-xs text-slate-500 font-semibold">
+                                    <span>Avance General</span>
+                                    <span>${completadosTotal}/${totalDeptos} (${porcentajeGlobal}%)</span>
+                                </div>
+                                <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden border border-slate-200 p-0.5">
+                                    <div class="bg-indigo-600 h-full rounded-full transition-all duration-300" style="width: ${porcentajeGlobal}%"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="pt-3 border-t border-slate-100 flex justify-between items-center text-xs">
+                            <span class="text-indigo-600 font-bold group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
+                                Abrir Condominio ➔
+                            </span>
+                            <div class="flex gap-1" onclick="event.stopPropagation()">
+                                <button onclick="abrirModalCondominio('${condo.id}')" class="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition" title="Editar Condominio">⚙️</button>
+                                <button onclick="eliminarCondominio('${condo.id}')" class="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition" title="Eliminar">🗑️</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderHermanos() {
+            const container = document.getElementById('hermanos-container');
+            if (hermanos.length === 0) {
+                container.innerHTML = '<p class="text-xs text-slate-400 italic col-span-2">No hay hermanos registrados aún.</p>';
+                return;
+            }
+
+            container.innerHTML = hermanos.map(h => {
+                let torreTexto = 'Todas las torres';
+                if (h.torreAsignada && h.torreAsignada !== 'todas') {
+                    for (const condo of datos) {
+                        const edif = condo.edificios.find(e => e.id === h.torreAsignada);
+                        if (edif) torreTexto = `${condo.nombre} - ${edif.nombre}`;
+                    }
+                }
+
+                return `
+                    <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 flex justify-between items-center hover:border-slate-300 transition-all">
+                        <div class="flex items-center gap-3">
+                            <div class="w-4 h-4 rounded-full border border-slate-300 shrink-0 ${h.colorClase ? h.colorClase.split(' ')[0] : 'bg-slate-300'}"></div>
+                            <div>
+                                <h4 class="font-bold text-slate-800 text-sm leading-snug">${h.nombre}</h4>
+                                <p class="text-xs text-slate-500">${h.contacto || 'Sin teléfono'}</p>
+                                <span class="text-[11px] text-indigo-600 font-semibold block mt-0.5">📍 ${torreTexto}</span>
+                            </div>
+                        </div>
+                        <div class="flex gap-1">
+                            <button onclick="abrirModalHermano('${h.id}')" class="text-indigo-600 hover:bg-indigo-50 text-xs px-3 py-1.5 rounded-xl font-bold transition">Editar</button>
+                            <button onclick="eliminarHermano('${h.id}')" class="text-rose-500 hover:bg-rose-50 text-xs px-3 py-1.5 rounded-xl font-bold transition">Eliminar</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleMaximizarModal(boxId) {
+            const el = document.getElementById(boxId);
+            if (!el) return;
+            if (el.classList.contains('max-w-5xl')) {
+                el.classList.remove('max-w-5xl', 'h-[92vh]', 'rounded-3xl');
+                el.classList.add('w-full', 'h-full', 'rounded-none');
+            } else {
+                el.classList.add('max-w-5xl', 'h-[92vh]', 'rounded-3xl');
+                el.classList.remove('w-full', 'h-full', 'rounded-none');
+            }
+        }
+
+        function abrirModalOperativo(condoId) {
+            condoOperativoId = condoId;
+            renderModalOperativo(condoId);
+            document.getElementById('modal-condo-operativo').classList.remove('hidden');
+        }
+
+        function cerrarModalOperativo() {
+            condoOperativoId = null;
+            document.getElementById('modal-condo-operativo').classList.add('hidden');
+        }
+
+        function renderModalOperativo(condoId) {
+            const condo = datos.find(c => c.id === condoId);
+            if (!condo) return;
+
+            document.getElementById('operativo-condo-nombre').innerText = condo.nombre;
+            document.getElementById('operativo-condo-info').innerText = `${condo.direccion || 'Sin dirección'} ${condo.administrador ? '• Admin: ' + condo.administrador : ''}`;
+            document.getElementById('operativo-btn-editar').onclick = () => abrirModalCondominio(condo.id);
+
+            const container = document.getElementById('operativo-condo-body');
+
+            if (condo.edificios.length === 0) {
+                container.innerHTML = `
+                    <div class="bg-white rounded-3xl p-12 text-center border border-slate-200 max-w-md mx-auto space-y-4 shadow-sm">
+                        <div class="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto text-2xl border border-indigo-100">🏙️</div>
+                        <p class="text-slate-500 text-sm font-medium">Este condominio aún no tiene torres creadas.</p>
+                        <button onclick="abrirModalEdificio('${condo.id}')" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl text-xs transition shadow-md shadow-indigo-600/20">+ Agregar primera Torre</button>
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    ${condo.edificios.map(edificio => {
+                        const total = edificio.deptos.length;
+                        const activos = edificio.deptos.filter(d => !d.excluido);
+                        const completados = activos.filter(d => d.estado === 'completado').length;
+                        const porcentaje = activos.length > 0 ? Math.round((completados / activos.length) * 100) : 0;
+
+                        return `
+                            <div onclick="abrirModalTorreOperativo('${condo.id}', '${edificio.id}')" class="bg-white border border-slate-200/80 hover:border-indigo-400 rounded-3xl p-5 flex flex-col justify-between space-y-4 shadow-xs hover:shadow-md cursor-pointer transition-all duration-200 group">
+                                <div class="space-y-3">
+                                    <div class="flex justify-between items-start border-b border-slate-100 pb-3">
+                                        <div>
+                                            <h3 class="font-bold text-slate-900 text-lg group-hover:text-indigo-600 transition-colors">${edificio.nombre}</h3>
+                                            <span class="text-xs text-slate-500 font-medium">${total} deptos totales</span>
+                                        </div>
+                                        <button onclick="event.stopPropagation(); abrirModalEdificio('${condo.id}', '${edificio.id}')" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold p-2 rounded-xl transition border border-slate-200" title="Configurar numeración">✏️</button>
+                                    </div>
+
+                                    <div class="space-y-1.5">
+                                        <div class="flex justify-between text-xs text-slate-500 font-semibold">
+                                            <span>Avance Torre</span>
+                                            <span>${completados}/${activos.length} (${porcentaje}%)</span>
+                                        </div>
+                                        <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden border border-slate-200 p-0.5">
+                                            <div class="bg-indigo-600 h-full rounded-full transition-all duration-300" style="width: ${porcentaje}%"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="pt-3 border-t border-slate-100 flex justify-between items-center text-xs">
+                                    <span class="text-indigo-600 font-bold group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
+                                        Trabajar esta Torre ➔
+                                    </span>
+                                    <button onclick="event.stopPropagation(); eliminarEdificio('${condo.id}', '${edificio.id}')" class="text-slate-400 hover:text-rose-600 font-bold p-1 rounded-lg hover:bg-rose-50 transition">🗑️</button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        function abrirModalTorreOperativo(condoId, edificioId) {
+            torreOperativaId = edificioId;
+            renderModalTorreOperativo(condoId, edificioId);
+            document.getElementById('modal-torre-operativo').classList.remove('hidden');
+        }
+
+        function cerrarModalTorreOperativo() {
+            torreOperativaId = null;
+            document.getElementById('modal-torre-operativo').classList.add('hidden');
+        }
+
+        function extraerPiso(numStr) {
+            const match = String(numStr).match(/\d+/);
+            if (!match) return 1;
+            const val = parseInt(match[0], 10);
+            return val >= 100 ? Math.floor(val / 100) : 1;
+        }
+
+        function agruparPorPiso(deptos) {
+            const grupos = {};
+            deptos.forEach(d => {
+                const piso = d.piso !== undefined ? d.piso : extraerPiso(d.numero);
+                if (!grupos[piso]) grupos[piso] = [];
+                grupos[piso].push(d);
+            });
+            return grupos;
+        }
+
+        function renderModalTorreOperativo(condoId, edificioId) {
+            const condo = datos.find(c => c.id === condoId);
+            if (!condo) return;
+            const edificio = condo.edificios.find(e => e.id === edificioId);
+            if (!edificio) return;
+
+            const total = edificio.deptos.length;
+            const activos = edificio.deptos.filter(d => !d.excluido);
+            const completados = activos.filter(d => d.estado === 'completado').length;
+            const porcentaje = activos.length > 0 ? Math.round((completados / activos.length) * 100) : 0;
+            const distanciaMinima = edificio.distanciaMinima !== undefined ? edificio.distanciaMinima : 2;
+
+            document.getElementById('operativo-torre-condo-tag').innerText = condo.nombre;
+            document.getElementById('operativo-torre-nombre').innerText = edificio.nombre;
+            document.getElementById('operativo-torre-stats').innerText = `${total} departamentos • ${completados}/${activos.length} trabajados (${porcentaje}%)`;
+
+            document.getElementById('torre-btn-excluir').onclick = () => abrirModalExcluidos(condo.id, edificio.id);
+            document.getElementById('torre-btn-asignar').onclick = () => abrirModalAsignacion(condo.id, edificio.id);
+
+            const asignacionesMap = {};
+            edificio.deptos.forEach(d => {
+                if (d.asignadoA) {
+                    if (!asignacionesMap[d.asignadoA]) asignacionesMap[d.asignadoA] = [];
+                    asignacionesMap[d.asignadoA].push(d.numero + (d.fijo ? ' 📌' : ''));
+                }
+            });
+
+            const deptosPorPiso = agruparPorPiso(edificio.deptos);
+            const pisosOrdenados = Object.keys(deptosPorPiso).sort((a,b) => b - a);
+
+            const container = document.getElementById('operativo-torre-body');
+            container.innerHTML = `
+                <div class="space-y-6">
+                    <!-- Control Bar -->
+                    <div class="bg-white p-4.5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row justify-between items-center gap-4">
+                        <div class="flex items-center gap-3 w-full sm:w-auto justify-between">
+                            <span class="text-xs font-semibold text-slate-700">Distancia mínima entre deptos:</span>
+                            <div class="flex items-center gap-1.5">
+                                <input type="number" min="0" max="20" value="${distanciaMinima}" onchange="actualizarDistanciaMinima('${condo.id}', '${edificio.id}', this.value)" class="w-14 text-center border border-slate-300 rounded-xl font-bold text-indigo-600 py-1 bg-slate-50 text-sm focus:outline-none focus:border-indigo-500">
+                                <span class="text-xs text-slate-400 font-bold">pts</span>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-3 w-full sm:w-auto">
+                            <div class="w-full sm:w-48 bg-slate-100 h-3 rounded-full overflow-hidden border border-slate-200 p-0.5">
+                                <div class="bg-indigo-600 h-full rounded-full transition-all duration-300" style="width: ${porcentaje}%"></div>
+                            </div>
+                            <span class="text-xs font-bold text-indigo-700 min-w-12 text-right">${porcentaje}%</span>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <!-- Mapa de Departamentos -->
+                        <div class="lg:col-span-2 space-y-3">
+                            <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">Departamentos Organizados por Piso</span>
+                            <div class="space-y-3.5">
+                                ${pisosOrdenados.map(piso => `
+                                    <div class="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-xs space-y-3">
+                                        <div class="flex justify-between items-center border-b border-slate-100 pb-2">
+                                            <span class="text-xs font-black text-indigo-600 tracking-widest">PISO ${piso}</span>
+                                            <span class="text-[11px] font-semibold text-slate-400">${deptosPorPiso[piso].length} deptos</span>
+                                        </div>
+                                        <div class="flex flex-wrap gap-2 pt-1">
+                                            ${deptosPorPiso[piso].sort((a, b) => a.numero.localeCompare(b.numero, undefined, {numeric: true})).map(depto => {
+                                                if (depto.excluido) {
+                                                    return `<span class="text-xs px-3 py-1.5 rounded-xl border bg-slate-100 border-slate-200 text-slate-400 line-through font-medium" title="Excluido: ${depto.motivoExcluido}">${depto.numero} 🚫</span>`;
+                                                }
+
+                                                let estiloColor = 'bg-slate-50 border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-100';
+                                                if (depto.asignadoA) {
+                                                    const hermanoObj = hermanos.find(h => h.nombre === depto.asignadoA);
+                                                    if (hermanoObj && hermanoObj.colorClase) estiloColor = hermanoObj.colorClase;
+                                                }
+                                                if (depto.estado === 'completado') {
+                                                    estiloColor = 'bg-emerald-100 border-emerald-300 text-emerald-900 line-through opacity-75';
+                                                }
+                                                
+                                                const fijoInfo = depto.fijo ? ' (Fijo)' : '';
+                                                const asignadoInfo = depto.asignadoA ? `Asignado a: ${depto.asignadoA}${fijoInfo}` : 'Sin asignar';
+                                                
+                                                return `
+                                                    <button onclick="ciclarEstadoDepto('${condo.id}', '${edificio.id}', '${depto.id}')" 
+                                                        class="text-xs px-3.5 py-1.5 rounded-xl border font-bold transition active:scale-95 shadow-xs ${estiloColor}" title="${asignadoInfo}">
+                                                        ${depto.numero} ${depto.fijo ? '📌' : ''}
+                                                    </button>
+                                                `;
+                                            }).join('')}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Resumen Asignaciones -->
+                        <div class="space-y-3">
+                            <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">Asignaciones en esta Torre</span>
+                            <div class="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+                                ${Object.keys(asignacionesMap).length === 0 ? 
+                                    '<p class="text-xs text-slate-400 italic">Sin hermanos asignados a esta torre.</p>' : 
+                                    Object.entries(asignacionesMap).map(([hermano, deptosList]) => `
+                                        <div class="text-xs border-b border-slate-100 pb-3 last:border-0 last:pb-0 space-y-2">
+                                            <span class="font-bold text-slate-900 text-sm block">${hermano}</span>
+                                            <div class="flex flex-wrap gap-1.5">
+                                                ${deptosList.map(d => `<span class="bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold px-2.5 py-1 rounded-lg text-[11px]">${d}</span>`).join('')}
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function cerrarModal() {
+            document.getElementById('modal').classList.add('hidden');
+            document.getElementById('modal-btn-guardar').style.display = 'block';
+        }
+
+        function abrirModalCondominio(condoId = null) {
+            modalContext = { tipo: 'condominio', condoId };
+            const condo = condoId ? datos.find(c => c.id === condoId) : null;
+
+            document.getElementById('modal-title').innerText = condo ? 'Editar Condominio' : 'Nuevo Condominio';
+            
+            document.getElementById('modal-body').innerHTML = `
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Nombre del Condominio</label>
+                    <input type="text" id="input-nombre" value="${condo ? condo.nombre : ''}" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-indigo-500" placeholder="Ej. Condominio Los Alerces">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Dirección</label>
+                    <input type="text" id="input-direccion" value="${condo && condo.direccion ? condo.direccion : ''}" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-indigo-500" placeholder="Ej. Av. Francia 1230">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Administración / Conserjería</label>
+                    <input type="text" id="input-administrador" value="${condo && condo.administrador ? condo.administrador : ''}" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-indigo-500" placeholder="Ej. Don Carlos / Conserjería">
+                </div>
+            `;
+            document.getElementById('modal-btn-guardar').style.display = 'block';
+            document.getElementById('modal').classList.remove('hidden');
+        }
+
+        function abrirModalEdificio(condominioId, edificioId = null) {
+            modalContext = { tipo: 'edificio', condoId: condominioId, edificioId };
+            const condo = datos.find(c => c.id === condominioId);
+            const edif = edificioId ? condo.edificios.find(e => e.id === edificioId) : null;
+
+            let textoDeptos = '';
+            if (edif) {
+                const deptosPorPiso = agruparPorPiso(edif.deptos);
+                const pisos = Object.keys(deptosPorPiso).sort((a,b) => a - b);
+                textoDeptos = pisos.map(p => `Piso ${p}: ${deptosPorPiso[p].map(d => d.numero).join(', ')}`).join('\n');
+            }
+
+            document.getElementById('modal-title').innerText = edif ? `Editar ${edif.nombre}` : 'Agregar Torre';
+            document.getElementById('modal-body').innerHTML = `
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Nombre de la Torre</label>
+                    <input type="text" id="input-nombre" value="${edif ? edif.nombre : ''}" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-indigo-500" placeholder="Ej. Torre A">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Departamentos (formato libre o por pisos)</label>
+                    <textarea id="input-deptos" rows="6" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-indigo-500" placeholder="Piso 1: 101, 102, 103&#10;Piso 2: 201, 202, 203">${textoDeptos}</textarea>
+                    <p class="text-[11px] text-slate-400 mt-1">Puedes escribir departamento por departamento o separar pisos usando "Piso X: ...".</p>
+                </div>
+            `;
+            document.getElementById('modal-btn-guardar').style.display = 'block';
+            document.getElementById('modal').classList.remove('hidden');
+        }
+
+        function abrirModalHermano(hermanoId = null) {
+            modalContext = { tipo: 'hermano', hermanoId };
+            const hermano = hermanoId ? hermanos.find(h => h.id === hermanoId) : null;
+
+            let torresOptions = '<option value="todas">Todas las torres</option>';
+            datos.forEach(condo => {
+                condo.edificios.forEach(edif => {
+                    const selected = (hermano && hermano.torreAsignada === edif.id) ? 'selected' : '';
+                    torresOptions += `<option value="${edif.id}" ${selected}>${condo.nombre} - ${edif.nombre}</option>`;
+                });
+            });
+
+            document.getElementById('modal-title').innerText = hermano ? 'Editar Hermano' : 'Registrar Hermano';
+            document.getElementById('modal-body').innerHTML = `
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Nombre y Apellido</label>
+                    <input type="text" id="input-nombre" value="${hermano ? hermano.nombre : ''}" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-indigo-500" placeholder="Ej. Hermano Pérez">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Contacto</label>
+                    <input type="text" id="input-contacto" value="${hermano && hermano.contacto ? hermano.contacto : ''}" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-indigo-500" placeholder="Ej. +56 9 ...">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Asignar a Torre específica</label>
+                    <select id="select-torre" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-indigo-500">
+                        ${torresOptions}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Color Distintivo</label>
+                    <select id="select-color" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-indigo-500">
+                        ${paletaColores.map((c, i) => {
+                            const isSelected = hermano && hermano.colorClase === c.clase ? 'selected' : '';
+                            return `<option value="${i}" ${isSelected}>${c.nombre}</option>`;
+                        }).join('')}
+                    </select>
+                </div>
+            `;
+            document.getElementById('modal-btn-guardar').style.display = 'block';
+            document.getElementById('modal').classList.remove('hidden');
+        }
+
+        function abrirModalExcluidos(condoId, edificioId) {
+            const condo = datos.find(c => c.id === condoId);
+            const edificio = condo.edificios.find(e => e.id === edificioId);
+
+            document.getElementById('modal-title').innerText = `Exclusiones - ${edificio.nombre}`;
+            document.getElementById('modal-body').innerHTML = `
+                <p class="text-xs text-slate-500 mb-2">Selecciona los departamentos que no se deben trabajar:</p>
+                <div class="max-h-60 overflow-y-auto space-y-2 p-1 border border-slate-200 rounded-2xl bg-slate-50">
+                    ${edificio.deptos.map(d => `
+                        <div class="flex flex-col gap-1.5 p-2.5 bg-white rounded-xl border border-slate-200 text-xs">
+                            <label class="flex items-center gap-2 font-bold cursor-pointer text-slate-800">
+                                <input type="checkbox" name="excluir-depto" value="${d.id}" ${d.excluido ? 'checked' : ''} class="rounded text-indigo-600 focus:ring-indigo-500" onchange="toggleMotivoExclusion('${d.id}', this.checked)">
+                                Depto ${d.numero}
+                            </label>
+                            <div id="motivo-container-${d.id}" class="${d.excluido ? 'flex' : 'hidden'} items-center gap-4 pl-5">
+                                <label class="flex items-center gap-1 cursor-pointer text-slate-600">
+                                    <input type="radio" name="motivo-${d.id}" value="Deshabitado" ${d.motivoExcluido === 'Deshabitado' ? 'checked' : ''} class="text-rose-600"> Deshabitado
+                                </label>
+                                <label class="flex items-center gap-1 cursor-pointer text-slate-600">
+                                    <input type="radio" name="motivo-${d.id}" value="Solicitado por ocupante" ${d.motivoExcluido === 'Solicitado por ocupante' ? 'checked' : ''} class="text-rose-600"> Solicitado por ocupante
+                                </label>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <button onclick="guardarExclusionesFinal('${condoId}', '${edificioId}')" type="button" class="w-full mt-3 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-md shadow-indigo-600/20">Guardar Exclusiones</button>
+            `;
+            document.getElementById('modal-btn-guardar').style.display = 'none';
+            document.getElementById('modal').classList.remove('hidden');
+        }
+
+        function toggleMotivoExclusion(deptoId, isChecked) {
+            const container = document.getElementById(`motivo-container-${deptoId}`);
+            if (container) {
+                if (isChecked) {
+                    container.classList.remove('hidden');
+                    container.classList.add('flex');
+                } else {
+                    container.classList.remove('flex');
+                    container.classList.add('hidden');
+                }
+            }
+        }
+
+        function guardarExclusionesFinal(condoId, edificioId) {
+            const condo = datos.find(c => c.id === condoId);
+            const edificio = condo.edificios.find(e => e.id === edificioId);
+
+            edificio.deptos.forEach(d => {
+                const checkbox = document.querySelector(`input[name="excluir-depto"][value="${d.id}"]`);
+                if (checkbox && checkbox.checked) {
+                    d.excluido = true;
+                    const motivoRadio = document.querySelector(`input[name="motivo-${d.id}"]:checked`);
+                    d.motivoExcluido = motivoRadio ? motivoRadio.value : 'Deshabitado';
+                    d.asignadoA = null;
+                } else {
+                    d.excluido = false;
+                    d.motivoExcluido = null;
+                }
+            });
+
+            guardarStorage();
+            cerrarModal();
+        }
+
+        function abrirModalAsignacion(condoId, edificioId) {
+            modalContext = { tipo: 'asignacion', condoId, edificioId };
+            const condo = datos.find(c => c.id === condoId);
+            const edificio = condo.edificios.find(e => e.id === edificioId);
+
+            const disponibles = hermanos.filter(h => !h.torreAsignada || h.torreAsignada === 'todas' || h.torreAsignada === edificioId);
+
+            document.getElementById('modal-title').innerText = `Asignar Publicadores - ${edificio.nombre}`;
+            
+            if (disponibles.length === 0) {
+                document.getElementById('modal-body').innerHTML = `<p class="text-xs text-slate-500 italic">No hay hermanos disponibles para esta torre. Agrega hermanos en la pestaña 'Hermanos'.</p>`;
+                document.getElementById('modal-btn-guardar').style.display = 'none';
+            } else {
+                document.getElementById('modal-body').innerHTML = `
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Deptos. por hermano</label>
+                                <input type="number" id="input-max-deptos" min="1" max="50" value="5" class="w-full px-3 py-1.5 border border-slate-300 rounded-xl text-xs font-bold text-indigo-700 bg-white focus:outline-none focus:border-indigo-500">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Distancia mín. (pts)</label>
+                                <input type="number" id="input-distancia-modal" min="0" max="20" value="${edificio.distanciaMinima !== undefined ? edificio.distanciaMinima : 2}" class="w-full px-3 py-1.5 border border-slate-300 rounded-xl text-xs font-bold text-indigo-700 bg-white focus:outline-none focus:border-indigo-500">
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-xs font-semibold text-slate-600">Hermanos a participar:</span>
+                                <div class="flex gap-1.5">
+                                    <button onclick="marcarTodosHermanos(true)" type="button" class="text-[11px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium px-2.5 py-0.5 rounded-lg transition">Todos</button>
+                                    <button onclick="marcarTodosHermanos(false)" type="button" class="text-[11px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium px-2.5 py-0.5 rounded-lg transition">Ninguno</button>
+                                </div>
+                            </div>
+                            <div class="space-y-1.5 max-h-48 overflow-y-auto p-1.5 border border-slate-200 rounded-2xl bg-slate-50">
+                                ${disponibles.map(h => `
+                                    <label class="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 cursor-pointer hover:bg-slate-100/80">
+                                        <input type="checkbox" name="hermanos-asignar" value="${h.nombre}" class="rounded text-indigo-600 focus:ring-indigo-500">
+                                        <div class="w-3 h-3 rounded-full ${h.colorClase ? h.colorClase.split(' ')[0] : 'bg-slate-300'}"></div>
+                                        ${h.nombre}
+                                    </label>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <div class="pt-2 border-t border-slate-100 flex justify-between items-center">
+                            <span class="text-[11px] text-slate-400">¿Vaciar asignaciones de la torre?</span>
+                            <button onclick="limpiarAsignacionesTorre('${condoId}', '${edificioId}')" type="button" class="text-xs bg-rose-50 hover:bg-rose-100 text-rose-600 font-semibold px-3 py-1.5 rounded-xl transition border border-rose-200">
+                                Limpiar Asignaciones
+                            </button>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('modal-btn-guardar').style.display = 'block';
+            }
+            document.getElementById('modal').classList.remove('hidden');
+        }
+
+        function marcarTodosHermanos(marcar) {
+            const checkboxes = document.querySelectorAll('input[name="hermanos-asignar"]');
+            checkboxes.forEach(cb => cb.checked = marcar);
+        }
+
+        function limpiarAsignacionesTorre(condoId, edificioId) {
+            if (confirm('¿Desasignar a todos los hermanos de esta torre?')) {
+                const condo = datos.find(c => c.id === condoId);
+                const edificio = condo.edificios.find(e => e.id === edificioId);
+
+                edificio.deptos.forEach(d => {
+                    if (!d.fijo) d.asignadoA = null;
+                });
+
+                guardarStorage();
+                cerrarModal();
+            }
+        }
+
+        function procesarTextoDeptosYPisos(texto) {
+            const lineas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            const deptosResultantes = [];
+
+            lineas.forEach(linea => {
+                let numeroPiso = null;
+                let contenido = linea;
+
+                if (linea.toLowerCase().includes('piso')) {
+                    const partes = linea.split(':');
+                    if (partes.length > 1) {
+                        const matchPiso = partes[0].match(/\d+/);
+                        if (matchPiso) numeroPiso = parseInt(matchPiso[0], 10);
+                        contenido = partes[1];
+                    }
+                }
+
+                const deptosEnLinea = contenido.split(',').map(d => d.trim()).filter(d => d.length > 0);
+
+                deptosEnLinea.forEach(numStr => {
+                    const pisoFinal = numeroPiso !== null ? numeroPiso : extraerPiso(numStr);
+                    deptosResultantes.push({
+                        numero: numStr,
+                        piso: pisoFinal
+                    });
+                });
+            });
+
+            return deptosResultantes;
+        }
+
+        function guardarModal() {
+            if (modalContext.tipo === 'condominio') {
+                const nombre = document.getElementById('input-nombre').value.trim();
+                const direccion = document.getElementById('input-direccion').value.trim();
+                const administrador = document.getElementById('input-administrador').value.trim();
+
+                if (!nombre) return alert('Por favor ingresa un nombre.');
+
+                if (modalContext.condoId) {
+                    const condo = datos.find(c => c.id === modalContext.condoId);
+                    condo.nombre = nombre;
+                    condo.direccion = direccion;
+                    condo.administrador = administrador;
+                } else {
+                    datos.push({
+                        id: 'condo_' + Date.now(),
+                        nombre,
+                        direccion,
+                        administrador,
+                        edificios: []
+                    });
+                }
+            } 
+            else if (modalContext.tipo === 'edificio') {
+                const nombre = document.getElementById('input-nombre').value.trim();
+                const deptosRaw = document.getElementById('input-deptos').value.trim();
+
+                if (!nombre || !deptosRaw) return alert('Por favor completa todos los campos.');
+
+                const parsedDeptos = procesarTextoDeptosYPisos(deptosRaw);
+                const condo = datos.find(c => c.id === modalContext.condoId);
+
+                if (modalContext.edificioId) {
+                    const edif = condo.edificios.find(e => e.id === modalContext.edificioId);
+                    edif.nombre = nombre;
+
+                    const deptosMap = {};
+                    edif.deptos.forEach(d => { deptosMap[d.numero] = d; });
+
+                    edif.deptos = parsedDeptos.map(pd => {
+                        if (deptosMap[pd.numero]) {
+                            deptosMap[pd.numero].piso = pd.piso;
+                            return deptosMap[pd.numero];
+                        } else {
+                            return {
+                                id: 'dep_' + Math.random().toString(36).substr(2, 9),
+                                numero: pd.numero,
+                                piso: pd.piso,
+                                estado: 'pendiente',
+                                asignadoA: null,
+                                fijo: false,
+                                excluido: false,
+                                motivoExcluido: null
+                            };
+                        }
+                    });
+                } else {
+                    condo.edificios.push({
+                        id: 'edif_' + Date.now(),
+                        nombre,
+                        distanciaMinima: 2,
+                        deptos: parsedDeptos.map(pd => ({
+                            id: 'dep_' + Math.random().toString(36).substr(2, 9),
+                            numero: pd.numero,
+                            piso: pd.piso,
+                            estado: 'pendiente',
+                            asignadoA: null,
+                            fijo: false,
+                            excluido: false,
+                            motivoExcluido: null
+                        }))
+                    });
+                }
+            } 
+            else if (modalContext.tipo === 'hermano') {
+                const nombre = document.getElementById('input-nombre').value.trim();
+                const contacto = document.getElementById('input-contacto').value.trim();
+                const torreAsignada = document.getElementById('select-torre').value;
+                const colorIdx = document.getElementById('select-color').value;
+
+                if (!nombre) return alert('Ingresa un nombre.');
+
+                const colorClase = paletaColores[colorIdx].clase;
+
+                if (modalContext.hermanoId) {
+                    const h = hermanos.find(item => item.id === modalContext.hermanoId);
+                    h.nombre = nombre;
+                    h.contacto = contacto;
+                    h.torreAsignada = torreAsignada;
+                    h.colorClase = colorClase;
+                } else {
+                    hermanos.push({
+                        id: 'h_' + Date.now(),
+                        nombre,
+                        contacto,
+                        torreAsignada,
+                        colorClase
+                    });
+                }
+            } 
+            else if (modalContext.tipo === 'asignacion') {
+                const condo = datos.find(c => c.id === modalContext.condoId);
+                const edificio = condo.edificios.find(e => e.id === modalContext.edificioId);
+
+                const distancia = parseInt(document.getElementById('input-distancia-modal').value) || 0;
+                const maxDeptosPorHermano = parseInt(document.getElementById('input-max-deptos').value) || 5;
+                edificio.distanciaMinima = distancia;
+
+                const checkboxes = document.querySelectorAll('input[name="hermanos-asignar"]:checked');
+                const seleccionados = Array.from(checkboxes).map(cb => cb.value);
+
+                if (seleccionados.length === 0) return alert('Selecciona al menos un hermano.');
+
+                distribuirDepartamentosSeguro(edificio, seleccionados, distancia, maxDeptosPorHermano);
+            }
+
+            guardarStorage();
+            cerrarModal();
+        }
+
+        function extraerNumeroDepto(numStr) {
+            const match = String(numStr).match(/\d+/);
+            return match ? parseInt(match[0], 10) : 0;
+        }
+
+        function distribuirDepartamentosSeguro(edificio, listaHermanos, distanciaMin, limiteMax) {
+            const deptosDisponibles = edificio.deptos.filter(d => !d.excluido && !d.fijo && !d.asignadoA);
+            const conteoConseguido = {};
+            const asignadosPorHermano = {};
+
+            edificio.deptos.forEach(d => {
+                if (d.asignadoA) {
+                    if (!asignadosPorHermano[d.asignadoA]) {
+                        asignadosPorHermano[d.asignadoA] = [];
+                        conteoConseguido[d.asignadoA] = 0;
+                    }
+                    asignadosPorHermano[d.asignadoA].push(extraerNumeroDepto(d.numero));
+                    conteoConseguido[d.asignadoA]++;
+                }
+            });
+
+            listaHermanos.forEach(h => {
+                if (!conteoConseguido[h]) {
+                    conteoConseguido[h] = 0;
+                    asignadosPorHermano[h] = [];
+                }
+            });
+
+            for (const depto of deptosDisponibles) {
+                const numDepto = extraerNumeroDepto(depto.numero);
+
+                for (const hermano of listaHermanos) {
+                    if (conteoConseguido[hermano] >= limiteMax) continue;
+
+                    const cumpleDistancia = asignadosPorHermano[hermano].every(numExistente => {
+                        return Math.abs(numExistente - numDepto) >= distanciaMin;
+                    });
+
+                    if (cumpleDistancia) {
+                        depto.asignadoA = hermano;
+                        asignadosPorHermano[hermano].push(numDepto);
+                        conteoConseguido[hermano]++;
+                        break;
+                    }
+                }
+            }
+        }
+
+        function actualizarDistanciaMinima(condoId, edificioId, valor) {
+            const condo = datos.find(c => c.id === condoId);
+            const edificio = condo.edificios.find(e => e.id === edificioId);
+            edificio.distanciaMinima = parseInt(valor) || 0;
+            guardarStorage();
+        }
+
+        function ciclarEstadoDepto(condoId, edificioId, deptoId) {
+            const condo = datos.find(c => c.id === condoId);
+            const edificio = condo.edificios.find(e => e.id === edificioId);
+            const depto = edificio.deptos.find(d => d.id === deptoId);
+
+            if (depto.excluido) return;
+
+            if (depto.estado === 'pendiente') {
+                depto.estado = 'completado';
+            } else {
+                depto.estado = 'pendiente';
+            }
+            guardarStorage();
+        }
+
+        function eliminarCondominio(condoId) {
+            if (confirm('¿Eliminar este condominio completo?')) {
+                datos = datos.filter(c => c.id !== condoId);
+                guardarStorage();
+            }
+        }
+
+        function eliminarEdificio(condoId, edificioId) {
+            if (confirm('¿Eliminar esta torre?')) {
+                const condo = datos.find(c => c.id === condoId);
+                condo.edificios = condo.edificios.filter(e => e.id !== edificioId);
+                guardarStorage();
+            }
+        }
+
+        function eliminarHermano(hermanoId) {
+            if (confirm('¿Eliminar registro de este hermano?')) {
+                hermanos = hermanos.filter(h => h.id !== hermanoId);
+                guardarStorage();
+            }
+        }
+
+        // Inicializar Renderizado
+        render();
+    </script>
+</body>
+</html>

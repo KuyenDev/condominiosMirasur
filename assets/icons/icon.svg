@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Gestor de Condominios">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="towerGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e0e7ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  <!-- Secondary tower -->
+  <rect x="292" y="156" width="124" height="248" rx="18" fill="#c7d2fe" opacity="0.9"/>
+  <rect x="318" y="190" width="28" height="24" rx="6" fill="#4338ca"/>
+  <rect x="362" y="190" width="28" height="24" rx="6" fill="#4338ca"/>
+  <rect x="318" y="234" width="28" height="24" rx="6" fill="#4338ca"/>
+  <rect x="362" y="234" width="28" height="24" rx="6" fill="#10b981"/>
+  <rect x="318" y="278" width="28" height="24" rx="6" fill="#10b981"/>
+  <rect x="362" y="278" width="28" height="24" rx="6" fill="#4338ca"/>
+  <rect x="318" y="322" width="28" height="24" rx="6" fill="#4338ca"/>
+  <rect x="362" y="322" width="28" height="24" rx="6" fill="#4338ca"/>
+  <!-- Main tower -->
+  <rect x="96" y="108" width="172" height="296" rx="22" fill="url(#towerGrad)"/>
+  <!-- Roof accent -->
+  <rect x="142" y="84" width="80" height="28" rx="10" fill="#a5b4fc"/>
+  <!-- Apartment grid -->
+  <rect x="124" y="144" width="44" height="32" rx="8" fill="#4f46e5"/>
+  <rect x="196" y="144" width="44" height="32" rx="8" fill="#10b981"/>
+  <rect x="124" y="196" width="44" height="32" rx="8" fill="#10b981"/>
+  <rect x="196" y="196" width="44" height="32" rx="8" fill="#4f46e5"/>
+  <rect x="124" y="248" width="44" height="32" rx="8" fill="#4f46e5"/>
+  <rect x="196" y="248" width="44" height="32" rx="8" fill="#f59e0b"/>
+  <rect x="124" y="300" width="44" height="32" rx="8" fill="#4f46e5"/>
+  <rect x="196" y="300" width="44" height="32" rx="8" fill="#10b981"/>
+  <!-- Door -->
+  <rect x="162" y="352" width="40" height="52" rx="8" fill="#312e81"/>
+  <!-- Ground bar -->
+  <rect x="76" y="396" width="360" height="16" rx="8" fill="#a5b4fc"/>
+</svg>
+

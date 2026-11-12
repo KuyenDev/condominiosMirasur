@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "updatedAt": null,
+  "congregacion": "Congregación",
+  "tituloApp": "GESTOR DE CONDOMINIOS",
+  "subtituloApp": "Organización metódica de cartas y visitas en condominios y torres",
+  "distanciaMinimaDefault": 2,
+  "maxDeptosDefault": 5,
+  "github": {
+    "owner": "",
+    "repo": "",
+    "branch": "main"
+  },
+  "privacidad": {
+    "ocultarContactoEnRepoPublico": true
+  }
+}
+

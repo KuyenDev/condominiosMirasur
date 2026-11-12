@@ -1,0 +1,47 @@
+name: Validar archivos JSON de datos
+
+on:
+  push:
+    paths:
+      - 'data/*.json'
+  pull_request:
+    paths:
+      - 'data/*.json'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-json:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Validar sintaxis y estructura JSON
+        run: |
+          python3 - <<'EOF'
+          import json
+          from pathlib import Path
+
+          required_files = [
+              'data/condominios.json',
+              'data/hermanos.json',
+              'data/configuracion.json',
+              'data/schema.json',
+          ]
+          for path_str in required_files:
+              p = Path(path_str)
+              assert p.exists(), f'Falta {path_str}'
+              data = json.loads(p.read_text(encoding='utf-8'))
+              assert isinstance(data, dict), f'{path_str} debe ser un objeto JSON'
+
+          condos = json.loads(Path('data/condominios.json').read_text(encoding='utf-8'))
+          assert isinstance(condos.get('condominios'), list), 'condominios debe ser una lista'
+
+          hermanos = json.loads(Path('data/hermanos.json').read_text(encoding='utf-8'))
+          assert isinstance(hermanos.get('hermanos'), list), 'hermanos debe ser una lista'
+
+          print('Validación JSON completada correctamente.')
+          EOF
+

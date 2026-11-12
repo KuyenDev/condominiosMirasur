@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Gestor de Predicación en Condominios: organización metódica de cartas, visitas, torres y asignaciones.">
+  <meta name="theme-color" content="#4338ca">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Condominios">
+
+  <title>Gestor de Predicación en Condominios</title>
+
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" type="image/svg+xml" href="./assets/icons/icon.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="./assets/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png">
+
+  <link rel="stylesheet" href="./css/variables.css">
+  <link rel="stylesheet" href="./css/main.css">
+  <link rel="stylesheet" href="./css/layout.css">
+  <link rel="stylesheet" href="./css/components.css">
+  <link rel="stylesheet" href="./css/admin.css">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Ir al contenido principal</a>
+
+  <div class="app-shell">
+    <!-- Banners de estado: offline, caché antigua, actualización PWA, cambios sin publicar -->
+    <div id="system-banners" class="status-bar-stack" aria-live="polite"></div>
+
+    <!-- Encabezado principal -->
+    <header class="app-header">
+      <div class="app-header__inner">
+        <div class="app-header__brand">
+          <span class="app-badge">
+            <span class="app-badge__dot" aria-hidden="true"></span>
+            <span id="header-congregation-badge">Congregación • Predicación en Condominios</span>
+          </span>
+          <h1 id="header-app-title" class="app-header__title">GESTOR DE CONDOMINIOS</h1>
+          <p id="header-app-subtitle" class="app-header__subtitle">
+            Organización metódica de cartas y visitas en condominios y torres
+          </p>
+          <div class="app-header__meta">
+            <span id="header-sync-status">Cargando datos...</span>
+          </div>
+        </div>
+
+        <div class="app-header__nav-wrap">
+          <nav class="tab-nav" role="tablist" aria-label="Secciones principales">
+            <button type="button" role="tab" aria-selected="true" aria-controls="tab-territorios" id="btn-tab-territorios" class="tab-btn is-active">
+              🏢 Territorios
+            </button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="tab-hermanos" id="btn-tab-hermanos" class="tab-btn">
+              👥 Publicadores
+            </button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="tab-admin" id="btn-tab-admin" class="tab-btn">
+              🔐 Admin
+            </button>
+          </nav>
+
+          <div class="header-actions">
+            <button type="button" id="btn-refresh-data" class="btn btn--secondary btn--sm" title="Consultar últimas actualizaciones">
+              ↻ Actualizar
+            </button>
+            <button type="button" id="btn-install-pwa" class="btn btn--primary btn--sm hidden">
+              📲 Instalar App
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <!-- PESTAÑA 1: TERRITORIOS -->
+      <section id="tab-territorios" class="tab-panel" role="tabpanel" aria-labelledby="btn-tab-territorios">
+        <div class="section-toolbar">
+          <div class="section-toolbar__top">
+            <div>
+              <h2 class="section-title">Directorio de Condominios</h2>
+              <p class="section-desc">Selecciona un condominio para ver sus torres, pisos y departamentos asignados.</p>
+            </div>
+            <button type="button" id="btn-nuevo-condominio" class="btn btn--primary hidden">
+              + Nuevo Condominio
+            </button>
+          </div>
+
+          <div class="toolbar-controls">
+            <div class="search-box">
+              <span class="search-box__icon" aria-hidden="true">🔍</span>
+              <label for="search-condos" class="sr-only">Buscar condominio</label>
+              <input type="search" id="search-condos" class="input search-box__input" placeholder="Buscar condominio por nombre o dirección...">
+            </div>
+          </div>
+        </div>
+
+        <div id="app-container" class="cards-grid"></div>
+      </section>
+
+      <!-- PESTAÑA 2: PUBLICADORES / HERMANOS -->
+      <section id="tab-hermanos" class="tab-panel hidden" role="tabpanel" aria-labelledby="btn-tab-hermanos">
+        <div class="panel-surface">
+          <div class="section-toolbar__top">
+            <div>
+              <h2 class="section-title">Publicadores / Hermanos</h2>
+              <p class="section-desc">Consulta las asignaciones activas por publicador, sus colores y torres fijas.</p>
+            </div>
+            <button type="button" id="btn-agregar-hermano" class="btn btn--primary hidden">
+              + Agregar Publicador
+            </button>
+          </div>
+
+          <div class="search-box">
+            <span class="search-box__icon" aria-hidden="true">🔍</span>
+            <label for="search-hermanos" class="sr-only">Buscar publicador</label>
+            <input type="search" id="search-hermanos" class="input search-box__input" placeholder="Buscar publicador por nombre...">
+          </div>
+
+          <div id="mis-asignaciones-container" class="hidden"></div>
+          <div id="hermanos-container" class="publishers-grid"></div>
+        </div>
+      </section>
+
+      <!-- PESTAÑA 3: ADMINISTRACIÓN -->
+      <section id="tab-admin" class="tab-panel hidden" role="tabpanel" aria-labelledby="btn-tab-admin">
+        <div id="admin-container"></div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      Gestor de Predicación en Condominios • Funciona sin conexión como aplicación instalable (PWA)
+    </footer>
+  </div>
+
+  <!-- Ventana Operativa de Condominio -->
+  <div id="modal-condo-operativo" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="operativo-condo-nombre">
+    <div id="condo-modal-box" class="modal-window">
+      <div class="modal-window__header">
+        <div>
+          <span class="modal-window__eyebrow">Panel del Condominio</span>
+          <h2 id="operativo-condo-nombre" class="modal-window__title">Nombre del Condominio</h2>
+          <p id="operativo-condo-info" class="modal-window__sub">Dirección y Administración</p>
+        </div>
+        <div class="modal-window__actions">
+          <button type="button" id="operativo-btn-editar" class="btn btn--secondary btn--sm hidden">⚙️ Configurar</button>
+          <button type="button" id="operativo-btn-add-torre" class="btn btn--primary btn--sm hidden">+ Torre</button>
+          <button type="button" id="condo-modal-max" class="btn btn--soft btn--icon" title="Maximizar / Restaurar" aria-label="Maximizar o restaurar ventana">⤢</button>
+          <button type="button" id="condo-modal-close" class="btn btn--soft btn--icon" title="Cerrar" aria-label="Cerrar ventana">✕</button>
+        </div>
+      </div>
+      <div id="operativo-condo-body" class="modal-window__body"></div>
+    </div>
+  </div>
+
+  <!-- Ventana Operativa de Torre -->
+  <div id="modal-torre-operativo" class="modal-backdrop modal-backdrop--torre hidden" role="dialog" aria-modal="true" aria-labelledby="operativo-torre-nombre">
+    <div id="torre-modal-box" class="modal-window">
+      <div class="modal-window__header modal-window__header--torre">
+        <div>
+          <span id="operativo-torre-condo-tag" class="modal-window__eyebrow">Condominio</span>
+          <h2 id="operativo-torre-nombre" class="modal-window__title">Nombre de la Torre</h2>
+          <p id="operativo-torre-stats" class="modal-window__sub">Avance y detalles</p>
+        </div>
+        <div class="modal-window__actions">
+          <button type="button" id="torre-btn-excluir" class="btn btn--tower-ghost btn--sm hidden">🚫 Excluir</button>
+          <button type="button" id="torre-btn-asignar" class="btn btn--tower-light btn--sm hidden">👥 Asignar</button>
+          <button type="button" id="torre-btn-reiniciar" class="btn btn--tower-ghost btn--sm hidden">🔄 Reiniciar ciclo</button>
+          <button type="button" id="torre-modal-max" class="btn btn--tower-ghost btn--icon" title="Maximizar / Restaurar" aria-label="Maximizar o restaurar torre">⤢</button>
+          <button type="button" id="torre-modal-close" class="btn btn--tower-ghost btn--icon" title="Cerrar" aria-label="Cerrar torre">✕</button>
+        </div>
+      </div>
+      <div id="operativo-torre-body" class="modal-window__body"></div>
+    </div>
+  </div>
+
+  <!-- Modal General de Formularios / Detalle -->
+  <div id="modal" class="modal-backdrop modal-backdrop--general hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-dialog">
+      <h3 id="modal-title" class="modal-dialog__title">Título</h3>
+      <div id="modal-body" class="modal-dialog__body"></div>
+      <div id="modal-footer" class="modal-dialog__footer">
+        <button type="button" id="modal-btn-cancelar" data-close-modal class="btn btn--soft">Cerrar</button>
+        <button type="button" id="modal-btn-guardar" class="btn btn--primary">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Confirmación Accesible -->
+  <div id="modal-confirm" class="modal-backdrop modal-backdrop--confirm hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+    <div class="modal-dialog modal-dialog--sm">
+      <h3 id="confirm-title" class="modal-dialog__title">Confirmar</h3>
+      <p id="confirm-message" class="section-desc" style="font-size:0.875rem; color:var(--color-text-secondary); margin:0;"></p>
+      <div class="modal-dialog__footer">
+        <button type="button" id="confirm-btn-cancel" class="btn btn--soft">Cancelar</button>
+        <button type="button" id="confirm-btn-accept" class="btn btn--primary">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contenedor de Toasts -->
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
+
