@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": null,
+  "updatedAt": "2026-11-13T00:13:35.001Z",
   "congregacion": "Congregación",
   "tituloApp": "GESTOR DE CONDOMINIOS",
   "subtituloApp": "Organización metódica de cartas y visitas en condominios y torres",
@@ -16,4 +16,3 @@
     "ocultarContactoEnRepoPublico": true
   }
 }
-

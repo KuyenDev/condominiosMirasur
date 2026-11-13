@@ -1,6 +1,12 @@
 {
   "version": 1,
-  "updatedAt": null,
-  "hermanos": []
+  "updatedAt": "2026-11-13T00:13:35.001Z",
+  "hermanos": [
+    {
+      "id": "h_e5eddf2c-a91",
+      "nombre": "Rodrigo Luna",
+      "torreAsignada": "todas",
+      "colorId": "indigo"
+    }
+  ]
 }
-
