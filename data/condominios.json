@@ -1,14 +1,5 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-13T00:13:35.001Z",
-  "condominios": [
-    {
-      "id": "condo_6a38d402-ae9",
-      "nombre": "prueba",
-      "direccion": "prueba 123",
-      "administrador": "conserjeria",
-      "notas": "123456",
-      "edificios": []
-    }
-  ]
+  "updatedAt": "2026-11-13T00:49:01.203Z",
+  "condominios": []
 }
