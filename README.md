@@ -11,9 +11,10 @@ En muchos condominios el acceso puerta a puerta está restringido y se predica m
 - **Consultar territorios por condominio, torre y piso:** Visualiza el avance general y por edificio de un vistazo.
 - **Distribuir departamentos equitativamente:** Asigna publicadores respetando un **límite máximo** por persona y una **distancia mínima** entre departamentos asignados a un mismo hermano (evitando asignar puertas contiguas).
 - **Respetar exclusiones y asignaciones fijas:** Marca departamentos como *Deshabitado* o *Solicitado por ocupante* (`🚫`) y fija asignaciones permanentes (`📌`).
-- **Consulta rápida por publicador ("Mis deptos"):** Cada hermano puede ver únicamente sus departamentos asignados y copiar su lista con un toque.
-- **Seguimiento local en campo:** En modo consulta, un publicador puede anotar los departamentos trabajados en su dispositivo y copiar un reporte listo para enviar por WhatsApp al encargado de territorios.
-- **Panel de Administración conectado a GitHub:** El administrador autenticado actualiza la información desde la propia aplicación y los cambios se publican en los archivos JSON del repositorio para toda la congregación.
+- **Acceso por nombre y apellido:** Al entrar, cada publicador escribe su nombre y apellido (ej. `Rodrigo Luna`). Solo puede ingresar si coincide con la lista de publicadores asignables, con opción **"Recordar en este dispositivo"** y **"🔄 Cambiar de sesión"** para cambiar de persona en el mismo dispositivo.
+- **Vista enfocada ("Mis Asignaciones" y "Mis Torres"):** Los publicadores ven únicamente sus departamentos asignados y sus torres correspondientes, sin exponer las asignaciones de otros hermanos.
+- **Marcado tentativo vs. finalización definitiva:** Un publicador puede marcar sus propios departamentos como finalizados (`🕒 En revisión` en ámbar discontinuo), notificando automáticamente al panel administrativo (y opcionalmente por WhatsApp). Solo los administradores pueden confirmar la finalización definitiva (`✅` en verde).
+- **Panel de Administración conectado a GitHub:** El administrador revisa y aprueba/rechaza reportes pendientes, gestiona territorios/publicadores y publica los cambios en los archivos JSON del repositorio para toda la congregación.
 
 ---
 
@@ -58,20 +59,25 @@ Se priorizó la simplicidad, rapidez y bajo mantenimiento sin frameworks complej
 │   ├── modules/
 │   │   ├── assignments.js      # Algoritmo de distribución equitativa con distancia mínima
 │   │   ├── modals.js           # Ventanas de creación, edición, exclusiones y detalle
-│   │   ├── publishers.js       # Pestaña de publicadores y resumen "Mis deptos"
-│   │   └── territories.js      # Pestaña de condominios, torres y mapa de departamentos
+│   │   ├── my-assignments.js   # Vista "Mis Asignaciones" y envío de marcas tentativas
+│   │   ├── publishers.js       # Pestaña de publicadores (solo administradores)
+│   │   └── territories.js      # Pestaña de condominios/torres y mapa de departamentos
 │   ├── services/
+│   │   ├── auth-proxy.js       # Cliente HTTP para el Cloudflare Worker (admin y reportes)
 │   │   ├── database.js         # Lectura, validación y exportación/importación JSON
 │   │   ├── github.js           # Conexión segura y commits atómicos con GitHub API
-│   │   └── storage.js          # Caché offline local y migración desde v0.2.2
+│   │   └── storage.js          # Sesión recordada, respaldo local y migración v0.2.2
 │   └── admin/
-│       ├── admin.js            # Sesión administrativa, sincronización y respaldos
-│       └── admin-ui.js         # Interfaz del panel de administración
+│       ├── admin.js            # Sesión administrativa, revisión de reportes y respaldos
+│       └── admin-ui.js         # Interfaz del panel de administración y bandeja de revisión
 ├── data/
 │   ├── condominios.json        # Condominios, torres y departamentos
 │   ├── hermanos.json           # Publicadores registrados y colores
-│   ├── configuracion.json      # Título, congregación y parámetros por defecto
+│   ├── configuracion.json      # Título, congregación, endpoint del Worker y parámetros
+│   ├── reportes.json           # Reportes tentativos enviados por publicadores para revisión
 │   └── schema.json             # Documentación estructural de los JSON
+├── worker/
+│   └── cloudflare-worker.js    # Backend serverless para login admin y reportes en tiempo real
 └── .github/
     └── workflows/
         ├── validate-data.yml   # Valida sintaxis JSON automáticamente al guardar cambios
@@ -125,13 +131,16 @@ Todas las rutas del proyecto son relativas (`./`), por lo que funciona en ambos 
 ## 7. Cómo funciona el almacenamiento y la privacidad
 
 ### Almacenamiento compartido en GitHub
-- Todos los hermanos consultan la información desde `data/condominios.json`, `data/hermanos.json` y `data/configuracion.json`.
-- Cuando el administrador publica cambios desde la app, esta utiliza **GitHub Git Data API** para guardar los tres archivos en **un único commit atómico**, evitando datos inconsistentes y detectando si otro administrador modificó el repositorio antes.
+- Todos los datos se almacenan en `data/condominios.json`, `data/hermanos.json`, `data/configuracion.json` y `data/reportes.json`.
+- Cuando el administrador publica cambios desde la app, esta utiliza **GitHub Git Data API** para guardar los archivos en **un único commit atómico**, evitando datos inconsistentes y fusionando reportes nuevos si un publicador envió un aviso mientras editabas.
+- Cuando un publicador marca un departamento terminado, si está configurado `authEndpoint` (Cloudflare Worker), el reporte se registra inmediatamente en `data/reportes.json` para que cualquier administrador lo vea en su bandeja **🔔 Notificaciones y revisión de publicadores** (y opcionalmente también puede enviar aviso por WhatsApp).
 
 ### Seguridad de credenciales y privacidad
 - **Nunca se guardan contraseñas ni tokens** en el código fuente, ni en `localStorage`, ni en `IndexedDB`, ni en archivos JSON públicos.
+- La puerta inicial exige **Nombre y Apellido** coincidente con la lista de publicadores asignables (no muestra un desplegable con toda la lista) y permite marcar **"Recordar en este dispositivo"** o usar **"🔄 Cambiar de sesión"**.
+- Cada publicador solo visualiza sus propias asignaciones y las torres donde participa; las demás personas no se muestran.
 - El token administrativo vive **únicamente en la memoria RAM** de la pestaña activa y se borra al cerrar sesión o cerrar la ventana.
-- **Protección de datos personales:** Si el repositorio de GitHub es **público**, se recomienda registrar a los publicadores usando nombre corto o iniciales (ej. `Hno. Carlos M.`). Además, la opción de privacidad activa por defecto **omite automáticamente los teléfonos de contacto** al subir `hermanos.json` a un repositorio público (aunque sí los conserva si exportas un respaldo local privado). Si necesitas compartir teléfonos dentro de la app, considera usar un repositorio privado con GitHub Pages privado (plan Pro/Team).
+- **Protección de datos personales:** Si el repositorio de GitHub es **público**, la opción de privacidad activa por defecto **omite automáticamente los teléfonos de contacto** al subir `hermanos.json` a un repositorio público (aunque sí los conserva si exportas un respaldo local privado). Si necesitas compartir teléfonos dentro de la app, considera usar un repositorio privado con GitHub Pages privado (plan Pro/Team).
 
 ---
 
@@ -167,15 +176,13 @@ Permite crear cuentas como `RLuna` con su propia contraseña para entrar y edita
 5. Genera el token y guárdalo en un gestor de contraseñas seguro (como Bitwarden o el llavero de tu teléfono).
 
 ### Uso habitual desde la aplicación
-1. Abre la pestaña **🔐 Admin**.
-2. Verifica el usuario y repositorio (en GitHub Pages se completan automáticamente) y pega tu token.
-3. Una vez dentro, puedes ir a **Territorios** o **Publicadores** para:
-   - Crear/editar condominios y torres (incluye generador rápido de pisos).
-   - Configurar exclusiones (`🚫`) y asignaciones automáticas equitativas (`👥 Asignar`).
-   - Cambiar el modo de toque en una torre entre **✓ Completar rápido** y **✏️ Editar / Fijar 📌** para asignar manualmente o fijar departamentos.
-   - Reiniciar el ciclo de una torre cuando se complete al 100%.
+1. Abre la pestaña **🔐 Admin** (o entra como administrador desde la pantalla de acceso).
+2. Verifica el usuario y repositorio (en GitHub Pages se completan automáticamente) y pega tu token o usuario/contraseña del Worker.
+3. Una vez dentro, puedes:
+   - Revisar la bandeja **🔔 Notificaciones y revisión de publicadores** para aprobar (`✅ Aprobar` -> finalizado definitivo) o rechazar (`↩️ Rechazar`) los departamentos marcados por los hermanos.
+   - Ir a **Territorios** o **Publicadores** para crear/editar condominios y torres, configurar exclusiones (`🚫`), usar asignaciones automáticas equitativas (`👥 Asignar`) y reiniciar el ciclo de una torre cuando se complete al 100%.
 4. Al terminar tus cambios, vuelve a **🔐 Admin** y pulsa **☁️ Publicar cambios en GitHub**.
-5. Espera ~1 minuto para que GitHub Pages actualice el sitio público.
+5. Si ya tenías desplegado un Cloudflare Worker de una versión anterior, **vuelve a pegar y desplegar** `worker/cloudflare-worker.js` para habilitar las rutas `GET /reports` y `POST /reports` de notificaciones en tiempo real.
 
 > **¿Ya usabas la versión anterior (`Deptos 0.2.2.html`)?** Si la abriste en el mismo navegador, el panel de administración detectará automáticamente tus datos antiguos y te mostrará un botón **"Importar datos de la v0.2.2"** para migrarlos sin perder nada.
 
@@ -184,7 +191,7 @@ Permite crear cuentas como `RLuna` con su propia contraseña para entrar y edita
 ## 9. Respaldos y restauración
 
 - **Generar respaldo:** En **🔐 Admin**, pulsa **⬇️ Descargar respaldo completo (.json)**. Guarda ese archivo en tu computador o nube personal.
-- **Actualización manual (alternativa sin token en app):** Puedes usar **📄 Exportar JSON para /data** y subir los tres archivos directamente en la carpeta `data/` de tu repositorio en GitHub.
+- **Actualización manual (alternativa sin token en app):** Puedes usar **📄 Exportar JSON para /data** y subir los cuatro archivos (`condominios.json`, `hermanos.json`, `configuracion.json`, `reportes.json`) directamente en la carpeta `data/` de tu repositorio en GitHub.
 - **Restaurar información:** En **🔐 Admin**, usa **⬆️ Importar respaldo (.json)** y selecciona tu archivo. La app validará la estructura, pedirá confirmación y guardará un punto de recuperación temporal (**↩️ Deshacer última importación**) por si te equivocas de archivo. Luego pulsa **☁️ Publicar cambios en GitHub**.
 
 ---

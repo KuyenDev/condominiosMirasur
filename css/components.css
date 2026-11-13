@@ -454,6 +454,69 @@
   gap: var(--space-4);
 }
 
+.my-assignments-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.my-assignments-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.my-stats-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.my-stat-pill {
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface-alt);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.my-stat-pill__num {
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.my-stat-pill__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.my-stat-pill--pending {
+  background-color: var(--pub-bg, var(--color-primary-soft));
+  border-color: var(--pub-border, var(--color-primary-border));
+  color: var(--pub-text, var(--color-primary-dark));
+}
+
+.my-stat-pill--review {
+  background-color: var(--color-warning-soft);
+  border: 2px dashed var(--color-warning);
+  color: var(--color-warning-text);
+}
+
+.my-stat-pill--done {
+  background-color: var(--color-success-soft);
+  border-color: var(--color-success-border);
+  color: var(--color-success-text);
+}
+
+.my-groups-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
 .assignment-group-card {
   background-color: var(--color-surface-alt);
   border: 1px solid var(--color-border);
@@ -461,7 +524,95 @@
   padding: var(--space-4);
   display: flex;
   flex-direction: column;
+  gap: var(--space-3);
+}
+
+.assignment-group-card__head {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-2);
+}
+
+.assignment-group-card__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.my-apt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.25rem, 1fr));
+  gap: var(--space-2);
+}
+
+.my-apt-tile {
+  border-radius: var(--radius-md);
+  padding: 0.55rem 0.65rem;
+  min-height: 3.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.2rem;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.12s ease;
+}
+
+.my-apt-tile:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.my-apt-tile.is-pending {
+  background-color: var(--pub-bg, var(--color-primary-soft));
+  border: 1.5px solid var(--pub-border, var(--color-primary-border));
+  color: var(--pub-text, var(--color-primary-dark));
+}
+
+.my-apt-tile.is-user-reported {
+  background-color: var(--color-warning-soft);
+  border: 2px dashed var(--color-warning);
+  color: var(--color-warning-text);
+  box-shadow: inset 4px 0 0 var(--pub-dot, var(--color-warning));
+}
+
+.my-apt-tile.is-completed {
+  background-color: var(--color-success-soft);
+  border: 1.5px solid var(--color-success-border);
+  color: var(--color-success-text);
+  box-shadow: inset 4px 0 0 var(--pub-dot, var(--color-success));
+}
+
+.my-apt-tile__num {
+  font-size: 0.92rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.my-apt-tile.is-completed .my-apt-tile__num {
+  text-decoration: line-through;
+}
+
+.my-apt-tile__status {
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+@media (min-width: 640px) {
+  .my-assignments-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .assignment-group-card__head {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
 }
 
 .assignment-chips {
@@ -481,6 +632,23 @@
   background-color: var(--pub-bg, var(--color-primary-soft));
   border: 1px solid var(--pub-border, var(--color-primary-border));
   color: var(--pub-text, var(--color-primary-dark));
+}
+
+.assignment-chip--btn {
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.12s ease;
+}
+
+.assignment-chip--btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-xs);
+}
+
+.assignment-chip.is-user-reported {
+  background-color: var(--color-warning-soft);
+  border: 2px dashed var(--color-warning);
+  color: var(--color-warning-text);
+  box-shadow: inset 3px 0 0 var(--pub-dot, var(--color-warning));
 }
 
 .assignment-chip.is-completed {
@@ -748,9 +916,23 @@
   color: var(--pub-text);
 }
 
+.apt-btn.is-user-reported {
+  background-color: var(--color-warning-soft);
+  border: 2px dashed var(--color-warning);
+  color: var(--color-warning-text);
+}
+
+.apt-btn.has-publisher.is-user-reported {
+  box-shadow: inset 4px 0 0 var(--pub-dot);
+}
+
+.apt-btn.is-user-reported .apt-btn__num {
+  text-decoration: none;
+}
+
 .apt-btn.is-completed {
   background-color: var(--color-success-soft);
-  border-color: var(--color-success-border);
+  border: 1.5px solid var(--color-success-border);
   color: var(--color-success-text);
 }
 
@@ -773,6 +955,29 @@
   color: var(--color-text-muted);
   text-decoration: line-through;
   font-weight: 600;
+}
+
+.apt-btn.is-other-neutral {
+  background-color: var(--color-surface-alt);
+  border-color: var(--color-border);
+  color: var(--color-text-muted);
+  opacity: 0.72;
+  cursor: default;
+}
+
+.apt-btn.is-readonly {
+  cursor: default;
+}
+
+.apt-btn.is-other-neutral:hover,
+.apt-btn.is-readonly:hover {
+  box-shadow: none;
+  border-color: var(--color-border);
+}
+
+.apt-btn.is-other-neutral:active,
+.apt-btn.is-readonly:active {
+  transform: none;
 }
 
 .apt-btn__sub {
@@ -873,6 +1078,24 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 0.25rem;
+  flex-shrink: 0;
+}
+
+.legend-swatch--review {
+  background-color: var(--color-warning-soft);
+  border: 2px dashed var(--color-warning);
+}
+
+.legend-swatch--done {
+  background-color: var(--color-success-soft);
+  border: 1.5px solid var(--color-success-border);
 }
 
 @media (min-width: 640px) {

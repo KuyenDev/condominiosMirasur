@@ -6,6 +6,7 @@ import {
   deleteHermanoAdmin,
   getPublisherById,
   getPublisherSummary,
+  getVisiblePendingReports,
   isAdminAuthenticated,
   setUiState,
   state
@@ -35,6 +36,17 @@ export function renderPublishersView() {
   }
 
   if (!listContainer) return;
+
+  if (!isAdmin) {
+    listContainer.innerHTML = '';
+    if (summaryContainer) {
+      summaryContainer.classList.add('hidden');
+      summaryContainer.innerHTML = '';
+    }
+    return;
+  }
+
+  const pendingReportIds = new Set(getVisiblePendingReports().map(r => r.deptoId));
 
   const query = (state.ui.searchHermano || '').trim().toLowerCase();
   const filtered = state.hermanos.filter(h => {
@@ -68,7 +80,7 @@ export function renderPublishersView() {
                 <p class="publisher-card__meta">
                   ${summary.total === 0
                     ? 'Sin departamentos asignados'
-                    : `${summary.pendientes} pendientes • ${summary.completados} completados`}
+                    : `${summary.pendientes} pendientes${summary.enRevision > 0 ? ` • ${summary.enRevision} en revisión` : ''} • ${summary.completados} completados`}
                 </p>
               </div>
             </div>
@@ -106,7 +118,7 @@ export function renderPublishersView() {
               <span class="color-dot" style="margin-top:0;"></span>
               <div>
                 <h3 class="section-title" style="font-size:1rem;">Departamentos asignados a ${escapeHtml(selected.nombre)}</h3>
-                <p class="section-desc">${summary.pendientes} pendientes • ${summary.completados} completados</p>
+                <p class="section-desc">${summary.pendientes} pendientes${summary.enRevision > 0 ? ` • ${summary.enRevision} en revisión` : ''} • ${summary.completados} completados</p>
               </div>
             </div>
             <div style="display:flex; gap:0.4rem;">
@@ -129,11 +141,15 @@ export function renderPublishersView() {
                       <button type="button" class="btn btn--soft btn--sm" data-jump-tower="${escapeHtml(g.condoId)}::${escapeHtml(g.edificioId)}">Ir a la torre ➔</button>
                     </div>
                     <div class="assignment-chips">
-                      ${sorted.map(d => `
-                        <span class="assignment-chip ${d.estado === 'completado' ? 'is-completed' : ''}">
-                          ${escapeHtml(d.numero)}${d.fijo ? ' 📌' : ''}${d.estado === 'completado' ? ' ✓' : ''}
-                        </span>
-                      `).join('')}
+                      ${sorted.map(d => {
+                        const isDone = d.estado === 'completado';
+                        const isReported = !isDone && pendingReportIds.has(d.id);
+                        return `
+                          <span class="assignment-chip ${isDone ? 'is-completed' : (isReported ? 'is-user-reported' : '')}">
+                            ${escapeHtml(d.numero)}${d.fijo ? ' 📌' : ''}${isDone ? ' ✓' : (isReported ? ' 🕒' : '')}
+                          </span>
+                        `;
+                      }).join('')}
                     </div>
                   </div>
                 `;

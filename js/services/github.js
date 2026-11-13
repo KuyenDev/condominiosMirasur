@@ -187,28 +187,54 @@ export async function fetchDataFromGitHubApi() {
     }
   };
 
-  const [condosDoc, hermanosDoc, configDoc] = await Promise.all([
+  const [condosDoc, hermanosDoc, configDoc, reportesDoc] = await Promise.all([
     readFile('data/condominios.json'),
     readFile('data/hermanos.json'),
-    readFile('data/configuracion.json')
+    readFile('data/configuracion.json'),
+    readFile('data/reportes.json')
   ]);
 
   return {
     headSha,
     condominios: Array.isArray(condosDoc) ? condosDoc : (condosDoc?.condominios || []),
     hermanos: Array.isArray(hermanosDoc) ? hermanosDoc : (hermanosDoc?.hermanos || []),
-    configuracion: configDoc || null
+    configuracion: configDoc || null,
+    reportes: Array.isArray(reportesDoc) ? reportesDoc : (reportesDoc?.reportes || [])
   };
 }
 
+function filterValidReportes(reportes, condominios, resolvedIds = []) {
+  const resolvedSet = new Set((resolvedIds || []).map(String));
+  const validDeptoMap = new Map();
+
+  (Array.isArray(condominios) ? condominios : []).forEach(c => {
+    (Array.isArray(c.edificios) ? c.edificios : []).forEach(e => {
+      (Array.isArray(e.deptos) ? e.deptos : []).forEach(d => {
+        validDeptoMap.set(String(d.id), d);
+      });
+    });
+  });
+
+  return (Array.isArray(reportes) ? reportes : []).filter(r => {
+    if (!r || !r.id || !r.deptoId) return false;
+    if (resolvedSet.has(String(r.id))) return false;
+    const d = validDeptoMap.get(String(r.deptoId));
+    if (!d || d.excluido || d.estado === 'completado') return false;
+    if (r.hermanoId && d.asignadoId !== r.hermanoId) return false;
+    return true;
+  });
+}
+
 /**
- * Guarda condominios.json, hermanos.json y configuracion.json de manera ATÓMICA
+ * Guarda condominios.json, hermanos.json, configuracion.json y reportes.json de manera ATÓMICA
  * en un único commit de Git utilizando Git Data API.
  */
 export async function commitDataAtomically({
   condominiosPayload,
   hermanosPayload,
   configuracionPayload,
+  reportesPayload = null,
+  resolvedReportIds = [],
   expectedHeadSha = null,
   commitMessage = 'Actualizar datos de condominios desde panel administrativo'
 }) {
@@ -224,10 +250,43 @@ export async function commitDataAtomically({
   const currentHeadSha = refData.object.sha;
 
   if (expectedHeadSha && currentHeadSha !== expectedHeadSha) {
-    throw new Error(
-      'Se detectaron cambios más recientes en GitHub realizados desde otro dispositivo. Sincroniza desde GitHub antes de guardar para no sobrescribir datos.'
-    );
+    let onlyReportsChanged = false;
+    try {
+      const cmp = await ghFetch(
+        `${basePath}/compare/${encodeURIComponent(expectedHeadSha)}...${encodeURIComponent(currentHeadSha)}`
+      );
+      const changedFiles = Array.isArray(cmp?.files) ? cmp.files : [];
+      onlyReportsChanged = changedFiles.length > 0 && changedFiles.every(f => f.filename === 'data/reportes.json');
+    } catch {
+      onlyReportsChanged = false;
+    }
+
+    if (!onlyReportsChanged) {
+      throw new Error(
+        'Se detectaron cambios más recientes en GitHub realizados desde otro dispositivo. Sincroniza desde GitHub antes de guardar para no sobrescribir datos.'
+      );
+    }
   }
+
+  let remoteReportes = [];
+  try {
+    const file = await ghFetch(`${basePath}/contents/data/reportes.json?ref=${encodeURIComponent(currentHeadSha)}`);
+    const parsed = JSON.parse(decodeBase64Utf8(file.content));
+    remoteReportes = Array.isArray(parsed) ? parsed : (parsed?.reportes || []);
+  } catch {
+    remoteReportes = [];
+  }
+
+  const baseReportes = remoteReportes.length > 0
+    ? remoteReportes
+    : (Array.isArray(reportesPayload?.reportes) ? reportesPayload.reportes : []);
+  const finalReportes = filterValidReportes(baseReportes, condominiosPayload?.condominios || [], resolvedReportIds);
+  const now = new Date().toISOString();
+  const finalReportesPayload = {
+    version: 1,
+    updatedAt: now,
+    reportes: finalReportes
+  };
 
   const headCommit = await ghFetch(`${basePath}/git/commits/${currentHeadSha}`);
   const baseTreeSha = headCommit.tree.sha;
@@ -236,7 +295,8 @@ export async function commitDataAtomically({
   const files = [
     { path: 'data/condominios.json', content: JSON.stringify(condominiosPayload, null, 2) + '\n' },
     { path: 'data/hermanos.json', content: JSON.stringify(hermanosPayload, null, 2) + '\n' },
-    { path: 'data/configuracion.json', content: JSON.stringify(configuracionPayload, null, 2) + '\n' }
+    { path: 'data/configuracion.json', content: JSON.stringify(configuracionPayload, null, 2) + '\n' },
+    { path: 'data/reportes.json', content: JSON.stringify(finalReportesPayload, null, 2) + '\n' }
   ];
 
   const treeEntries = [];
@@ -286,7 +346,8 @@ export async function commitDataAtomically({
 
   return {
     commitSha: newCommit.sha,
-    committedAt: new Date().toISOString()
+    committedAt: now,
+    reportes: finalReportes
   };
 }
 

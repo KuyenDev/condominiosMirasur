@@ -4,14 +4,17 @@
 
 import {
   applyAsignacionesAdmin,
+  approveReportAdmin,
   clearAsignacionesTorreAdmin,
   getCondoById,
+  getCurrentPublisher,
+  getPendingReportForDepto,
   getPublisherById,
   getTowerByIds,
   isAdminAuthenticated,
+  rejectReportAdmin,
   saveExclusionesAdmin,
   state,
-  toggleLocalDeptoProgress,
   updateDeptoDetalleAdmin,
   upsertCondominioAdmin,
   upsertEdificioAdmin,
@@ -23,9 +26,10 @@ import {
   agruparPorPiso,
   compararDeptosNatural,
   escapeHtml,
+  formatDateTime,
   generarTextoPisos
 } from '../core/utils.js';
-import { saveLocalProgress } from '../services/storage.js';
+import { copyOrOpenWhatsAppReport, submitPublisherDeptoMark } from './my-assignments.js';
 
 let modalContext = { tipo: '', condoId: null, edificioId: null, hermanoId: null, deptoId: null };
 let onModalClosedFocusEl = null;
@@ -192,9 +196,9 @@ export function abrirModalHermano(hermanoId = null) {
     title: hermano ? 'Editar Publicador' : 'Registrar Publicador',
     bodyHtml: `
       <div class="field">
-        <label class="field__label" for="input-nombre">Nombre o Alias visible *</label>
-        <input type="text" id="input-nombre" class="input" value="${escapeHtml(hermano?.nombre || '')}" placeholder="Ej. Hno. Carlos M." required>
-        <p class="field__hint">Recomendación de privacidad: si tu repositorio es público, usa iniciales o nombre corto.</p>
+        <label class="field__label" for="input-nombre">Nombre y Apellido *</label>
+        <input type="text" id="input-nombre" class="input" value="${escapeHtml(hermano?.nombre || '')}" placeholder="Ej. Rodrigo Luna" required>
+        <p class="field__hint">El publicador ingresará a la aplicación escribiendo exactamente este nombre y apellido.</p>
       </div>
       <div class="field">
         <label class="field__label" for="input-contacto">Contacto (opcional)</label>
@@ -351,8 +355,8 @@ export function abrirModalAsignacion(condoId, edificioId) {
 
 /**
  * Modal de detalle del departamento:
- * - Usuario normal: consulta detallada + marcar avance personal en su dispositivo.
- * - Administrador: edición completa incluyendo asignación manual, Fijo 📌, exclusión y nota.
+ * - Publicador: consulta sus asignaciones y marca como finalizado (pendiente de revisión por admin).
+ * - Administrador: revisa reportes pendientes y edita estado definitivo, asignación, Fijo 📌, exclusión y nota.
  */
 export function abrirModalDetalleDepto(condoId, edificioId, deptoId) {
   const { condo, edificio } = getTowerByIds(condoId, edificioId);
@@ -363,10 +367,24 @@ export function abrirModalDetalleDepto(condoId, edificioId, deptoId) {
   const isAdmin = isAdminAuthenticated();
   const asignado = depto.asignadoId ? getPublisherById(depto.asignadoId) : null;
   const asignadoLabel = asignado ? asignado.nombre : (depto.asignadoA || 'Sin asignar');
+  const pendingReport = getPendingReportForDepto(depto.id);
 
   if (!isAdmin) {
+    const currentPub = getCurrentPublisher();
+    if (!currentPub || depto.asignadoId !== currentPub.id || depto.excluido) {
+      showToast('Solo puedes gestionar departamentos asignados a tu nombre.', 'warning');
+      return;
+    }
+
     modalContext = { tipo: 'depto-consulta', condoId, edificioId, deptoId };
-    const isLocalDone = Boolean(state.localProgress[depto.id]);
+    const isFinalDone = depto.estado === 'completado';
+    const isReported = !isFinalDone && Boolean(pendingReport);
+
+    const estadoLabel = isFinalDone
+      ? '✅ Finalizado definitivo (confirmado por administración)'
+      : (isReported
+        ? (pendingReport.isLocalOnly ? '📱 Marcado en este dispositivo (sin enviar al servidor)' : '🕒 Marcado por ti — Pendiente de revisión por admin')
+        : '⏳ Pendiente');
 
     openGeneralModal({
       title: `${edificio.nombre} — Depto ${depto.numero}`,
@@ -375,26 +393,104 @@ export function abrirModalDetalleDepto(condoId, edificioId, deptoId) {
         <div class="notice-box" style="display:flex; flex-direction:column; gap:0.5rem;">
           <div><strong>Condominio:</strong> ${escapeHtml(condo.nombre)}</div>
           <div><strong>Piso:</strong> ${escapeHtml(depto.piso)}</div>
-          <div><strong>Estado oficial:</strong> ${depto.excluido ? `🚫 Excluido (${escapeHtml(depto.motivoExcluido || 'Sin motivo')})` : (depto.estado === 'completado' ? '✅ Completado' : '⏳ Pendiente')}</div>
+          <div><strong>Estado:</strong> ${estadoLabel}</div>
           <div><strong>Asignado a:</strong> ${escapeHtml(asignadoLabel)} ${depto.fijo ? '📌 (Fijo)' : ''}</div>
-          ${depto.nota ? `<div><strong>Nota:</strong> ${escapeHtml(depto.nota)}</div>` : ''}
+          ${depto.nota ? `<div><strong>Nota de administración:</strong> ${escapeHtml(depto.nota)}</div>` : ''}
         </div>
-        ${!depto.excluido ? `
-          <div class="notice-box notice-box--security">
-            <p style="margin:0 0 0.65rem 0;">Puedes marcar este departamento en tu lista personal de este dispositivo para llevar control de tus cartas/visitas de hoy y luego copiar el reporte.</p>
-            <button type="button" id="btn-toggle-local-depto" class="btn ${isLocalDone ? 'btn--success' : 'btn--primary'}">
-              ${isLocalDone ? '✓ Marcado en este dispositivo (Quitar)' : 'Marcar como trabajado hoy (solo este dispositivo)'}
+
+        ${isFinalDone ? `
+          <div class="notice-box" style="background:var(--color-success-soft); border-color:var(--color-success-border); color:var(--color-success-text);">
+            Este departamento ya fue confirmado como <strong>finalizado definitivo</strong> por un administrador.
+          </div>
+        ` : isReported ? `
+          <div class="notice-box notice-box--privacy" style="display:flex; flex-direction:column; gap:0.65rem;">
+            <div>
+              <strong>🕒 En revisión por administración</strong>
+              <p style="margin:0.25rem 0 0 0;">
+                Enviado el ${escapeHtml(formatDateTime(pendingReport.createdAt))}${pendingReport.nota ? ` • Nota: "${escapeHtml(pendingReport.nota)}"` : ''}.
+                Aún no figura como finalizado definitivo hasta que el administrador lo apruebe.
+              </p>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:0.5rem;">
+              <button type="button" id="btn-pub-send-wa" class="btn btn--success btn--sm">📲 Avisar por WhatsApp</button>
+              <button type="button" id="btn-pub-unmark" class="btn btn--danger-soft btn--sm">↩️ Quitar marca (volver a pendiente)</button>
+            </div>
+          </div>
+        ` : `
+          <div class="notice-box notice-box--security" style="display:flex; flex-direction:column; gap:0.75rem;">
+            <p style="margin:0;">
+              Cuando hayas terminado este departamento, márcalo aquí para avisar al administrador. Quedará <strong>en revisión</strong> hasta su confirmación definitiva.
+            </p>
+            <div class="field">
+              <label class="field__label" for="pub-report-nota">Nota breve para el admin (opcional)</label>
+              <input type="text" id="pub-report-nota" class="input" maxlength="200" placeholder="Ej. Carta dejada en buzón / Visitado hoy">
+            </div>
+            <button type="button" id="btn-pub-mark-done" class="btn btn--primary">
+              📩 Marcar como finalizado (enviar a revisión)
             </button>
           </div>
-        ` : ''}
+        `}
       `
     });
 
-    document.getElementById('btn-toggle-local-depto')?.addEventListener('click', () => {
-      toggleLocalDeptoProgress(depto.id);
-      saveLocalProgress(state.localProgress);
-      closeGeneralModal();
-      showToast(state.localProgress[depto.id] ? `Depto ${depto.numero} anotado en tu avance local.` : `Depto ${depto.numero} quitado de tu avance local.`, 'info');
+    document.getElementById('btn-pub-mark-done')?.addEventListener('click', async e => {
+      const btn = e.currentTarget;
+      const nota = document.getElementById('pub-report-nota')?.value || '';
+      btn.disabled = true;
+      btn.textContent = 'Enviando aviso...';
+      try {
+        const res = await submitPublisherDeptoMark({
+          condoId,
+          edificioId,
+          deptoId: depto.id,
+          mark: true,
+          nota
+        });
+        closeGeneralModal();
+        if (res.synced) {
+          showToast(`Depto ${depto.numero} marcado en revisión y notificado a los administradores.`, 'success', 5000);
+        } else {
+          showToast(
+            `Depto ${depto.numero} guardado en revisión en este dispositivo. Usa "Avisar por WhatsApp" para notificar al admin.`,
+            'warning',
+            6000
+          );
+        }
+      } catch (err) {
+        showToast(err.message || 'No se pudo marcar el departamento.', 'error', 5000);
+        if (document.body.contains(btn)) {
+          btn.disabled = false;
+          btn.textContent = '📩 Marcar como finalizado (enviar a revisión)';
+        }
+      }
+    });
+
+    document.getElementById('btn-pub-unmark')?.addEventListener('click', async e => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = 'Quitando marca...';
+      try {
+        await submitPublisherDeptoMark({
+          condoId,
+          edificioId,
+          deptoId: depto.id,
+          mark: false
+        });
+        closeGeneralModal();
+        showToast(`Se quitó la marca de revisión del Depto ${depto.numero}.`, 'info');
+      } catch (err) {
+        showToast(err.message || 'No se pudo quitar la marca.', 'error', 5000);
+        if (document.body.contains(btn)) {
+          btn.disabled = false;
+          btn.textContent = '↩️ Quitar marca (volver a pendiente)';
+        }
+      }
+    });
+
+    document.getElementById('btn-pub-send-wa')?.addEventListener('click', () => {
+      if (pendingReport) {
+        copyOrOpenWhatsAppReport([pendingReport], true);
+      }
     });
     return;
   }
@@ -405,16 +501,33 @@ export function abrirModalDetalleDepto(condoId, edificioId, deptoId) {
     ...state.hermanos.map(h => `<option value="${escapeHtml(h.id)}" ${depto.asignadoId === h.id ? 'selected' : ''}>${escapeHtml(h.nombre)}</option>`)
   ].join('');
 
+  const reviewHtml = pendingReport ? `
+    <div class="notice-box notice-box--privacy" style="display:flex; flex-direction:column; gap:0.65rem;">
+      <div>
+        <strong>🕒 Reportado por publicador (Pendiente de revisión)</strong>
+        <p style="margin:0.25rem 0 0 0;">
+          <strong>${escapeHtml(pendingReport.hermanoNombre)}</strong> marcó este departamento como finalizado el ${escapeHtml(formatDateTime(pendingReport.createdAt))}.
+          ${pendingReport.nota ? `<br>Nota: <em>"${escapeHtml(pendingReport.nota)}"</em>` : ''}
+        </p>
+      </div>
+      <div style="display:flex; flex-wrap:wrap; gap:0.5rem;">
+        <button type="button" id="btn-admin-approve-depto" class="btn btn--success btn--sm">✅ Aprobar definitivo</button>
+        <button type="button" id="btn-admin-reject-depto" class="btn btn--danger-soft btn--sm">↩️ Rechazar (dejar pendiente)</button>
+      </div>
+    </div>
+  ` : '';
+
   openGeneralModal({
     title: `Editar Depto ${depto.numero} — ${edificio.nombre}`,
     saveLabel: 'Aplicar cambios',
     bodyHtml: `
+      ${reviewHtml}
       <div class="admin-form-grid">
         <div class="field">
-          <label class="field__label" for="depto-estado">Estado</label>
+          <label class="field__label" for="depto-estado">Estado definitivo</label>
           <select id="depto-estado" class="select">
             <option value="pendiente" ${depto.estado === 'pendiente' ? 'selected' : ''}>⏳ Pendiente</option>
-            <option value="completado" ${depto.estado === 'completado' ? 'selected' : ''}>✅ Completado</option>
+            <option value="completado" ${depto.estado === 'completado' ? 'selected' : ''}>✅ Completado definitivo</option>
           </select>
         </div>
         <div class="field">
@@ -447,6 +560,22 @@ export function abrirModalDetalleDepto(condoId, edificioId, deptoId) {
         <input type="text" id="depto-nota" class="input" value="${escapeHtml(depto.nota || '')}" placeholder="Ej. Buzón en conserjería / Carta enviada Nov">
       </div>
     `
+  });
+
+  document.getElementById('btn-admin-approve-depto')?.addEventListener('click', () => {
+    if (pendingReport) {
+      approveReportAdmin(pendingReport.id);
+      closeGeneralModal();
+      showToast(`Depto ${depto.numero} aprobado como finalizado definitivo.`, 'success');
+    }
+  });
+
+  document.getElementById('btn-admin-reject-depto')?.addEventListener('click', () => {
+    if (pendingReport) {
+      rejectReportAdmin(pendingReport.id);
+      closeGeneralModal();
+      showToast(`Reporte del Depto ${depto.numero} rechazado (queda pendiente).`, 'info');
+    }
   });
 
   document.getElementById('depto-excluido')?.addEventListener('change', e => {

@@ -184,3 +184,33 @@ export function cloneDeep(obj) {
   return JSON.parse(JSON.stringify(obj));
 }
 
+export function normalizePersonName(value) {
+  return String(value || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+function stripHonorificPrefix(norm) {
+  return norm.replace(/^(?:hno|hna)\.?\s+/i, '').trim();
+}
+
+export function personNamesMatch(a, b) {
+  const na = normalizePersonName(a);
+  const nb = normalizePersonName(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const sa = stripHonorificPrefix(na);
+  const sb = stripHonorificPrefix(nb);
+  return Boolean(sa && sb && sa === sb);
+}
+
+export function findMatchingPublisher(hermanos, inputName) {
+  if (!Array.isArray(hermanos) || !inputName) return null;
+  const exact = hermanos.find(h => normalizePersonName(h?.nombre) === normalizePersonName(inputName));
+  if (exact) return exact;
+  return hermanos.find(h => personNamesMatch(h?.nombre, inputName)) || null;
+}
+

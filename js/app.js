@@ -1,21 +1,29 @@
 /**
  * Punto de entrada principal de la aplicación.
- * Coordina carga inicial de datos JSON, caché offline, PWA/Service Worker,
- * navegación y renderizado reactivo.
+ * Coordina puerta de acceso (publicador/admin), carga inicial de datos JSON,
+ * caché offline, PWA/Service Worker, navegación y renderizado reactivo.
  */
 
-import { renderAdminView } from './admin/admin-ui.js';
+import { bindAdminLoginEvents, buildAdminLoginHtml, renderAdminView } from './admin/admin-ui.js';
+import { logoutFullSession, refreshPendingReports } from './admin/admin.js';
 import {
+  getCurrentPublisher,
+  getVisiblePendingReports,
   isAdminAuthenticated,
+  isPublisherAuthenticated,
+  isSessionAuthenticated,
   setInitialDataset,
+  setLocalPendingReportsState,
   setLocalProgressMap,
+  setPublisherSession,
   setSyncState,
   setUiState,
   state,
-  subscribe
+  subscribe,
+  validatePublisherSessionAgainstDataset
 } from './core/state.js';
 import { showToast } from './core/ui-feedback.js';
-import { escapeHtml, formatDateTime } from './core/utils.js';
+import { escapeHtml, findMatchingPublisher, formatDateTime } from './core/utils.js';
 import {
   abrirModalCondominio,
   abrirModalHermano,
@@ -23,6 +31,7 @@ import {
   saveActiveModal,
   toggleMaximizeModal
 } from './modules/modals.js';
+import { renderMyAssignmentsView } from './modules/my-assignments.js';
 import { renderPublishersView } from './modules/publishers.js';
 import {
   closeCondoOperativeModal,
@@ -32,10 +41,192 @@ import {
   renderTowerOperativeModal
 } from './modules/territories.js';
 import { loadRemoteJsonFiles } from './services/database.js';
-import { loadCachedSnapshot, loadLocalProgress, saveCachedSnapshot } from './services/storage.js';
+import {
+  clearPublisherSessionStorage,
+  loadCachedSnapshot,
+  loadLocalPendingReports,
+  loadLocalProgress,
+  loadPublisherSessionStorage,
+  saveCachedSnapshot,
+  savePublisherSessionStorage
+} from './services/storage.js';
 
 let waitingWorker = null;
 let deferredInstallPrompt = null;
+let lastGateRenderKey = '';
+
+function renderAuthGate() {
+  const gateEl = document.getElementById('auth-gate');
+  const shellEl = document.getElementById('app-shell');
+  if (!gateEl || !shellEl) return;
+
+  if (isSessionAuthenticated()) {
+    lastGateRenderKey = '';
+    gateEl.classList.add('hidden');
+    gateEl.innerHTML = '';
+    shellEl.classList.remove('hidden');
+    return;
+  }
+
+  shellEl.classList.add('hidden');
+  gateEl.classList.remove('hidden');
+
+  const gateMode = state.ui.gateMode === 'admin' ? 'admin' : 'publisher';
+  const authEndpoint = (state.configuracion?.authEndpoint || '').trim();
+  const cong = state.configuracion?.congregacion || 'Congregación';
+  const tituloApp = state.configuracion?.tituloApp || 'GESTOR DE CONDOMINIOS';
+  const subtituloApp = state.configuracion?.subtituloApp || 'Organización metódica de cartas y visitas en condominios y torres';
+
+  const renderKey = [
+    state.ui.dataReady ? '1' : '0',
+    gateMode,
+    state.ui.gateError || '',
+    state.hermanos.length,
+    authEndpoint,
+    tituloApp,
+    cong
+  ].join('|');
+
+  if (renderKey === lastGateRenderKey) return;
+  lastGateRenderKey = renderKey;
+
+  const prevPubName = document.getElementById('gate-pub-name')?.value || '';
+  const prevRememberEl = document.getElementById('gate-remember');
+  const prevRemember = prevRememberEl ? prevRememberEl.checked : false;
+
+  let bodyHtml = '';
+  if (!state.ui.dataReady) {
+    bodyHtml = `
+      <div class="auth-gate__loading">
+        <p>Cargando lista de publicadores y territorios...</p>
+      </div>
+    `;
+  } else if (gateMode === 'admin') {
+    bodyHtml = `
+      ${buildAdminLoginHtml({ prefix: 'gate', title: '🔐 Ingreso de Administrador', compact: true })}
+      <div class="auth-gate__switch">
+        <button type="button" id="gate-to-publisher" class="btn btn--soft btn--sm">← Volver a ingreso de publicadores</button>
+      </div>
+    `;
+  } else {
+    const emptyListNotice = state.hermanos.length === 0
+      ? `<div class="notice-box notice-box--warning">
+          No hay publicadores cargados en la lista todavía. Si eres administrador, ingresa abajo para cargar o crear publicadores.
+        </div>`
+      : '';
+
+    bodyHtml = `
+      <form id="gate-publisher-form" class="auth-gate__form">
+        <div>
+          <h2 class="section-title" style="font-size:1.1rem;">Ingreso de Publicadores</h2>
+          <p class="section-desc">
+            Escribe tu <strong>nombre y apellido</strong> tal como figura en los territorios asignados para ver tu progreso.
+          </p>
+        </div>
+
+        ${emptyListNotice}
+
+        <div class="field">
+          <label class="field__label" for="gate-pub-name">Nombre y apellido *</label>
+          <input type="text" id="gate-pub-name" class="input" autocomplete="name" placeholder="Ej. Rodrigo Luna" value="${escapeHtml(prevPubName)}" required>
+        </div>
+
+        <label class="checkbox-inline" for="gate-remember">
+          <input type="checkbox" id="gate-remember" ${prevRemember ? 'checked' : ''}>
+          <span>Recordar en este dispositivo</span>
+        </label>
+
+        ${state.ui.gateError ? `
+          <div id="gate-error" class="notice-box notice-box--danger" role="alert">${escapeHtml(state.ui.gateError)}</div>
+        ` : ''}
+
+        <div class="admin-actions-row">
+          <button type="submit" id="gate-pub-submit" class="btn btn--primary" ${state.hermanos.length === 0 ? 'disabled' : ''}>Ingresar</button>
+          <button type="button" id="gate-refresh-list" class="btn btn--secondary">↻ Actualizar lista</button>
+        </div>
+      </form>
+
+      <div class="auth-gate__switch">
+        <button type="button" id="gate-to-admin" class="btn btn--soft btn--sm">🔐 ¿Eres administrador? Ingresar</button>
+      </div>
+    `;
+  }
+
+  gateEl.innerHTML = `
+    <div class="auth-gate__card">
+      <div class="auth-gate__brand">
+        <span class="app-badge">
+          <span class="app-badge__dot" aria-hidden="true"></span>
+          <span>${escapeHtml(cong)} • Predicación en Condominios</span>
+        </span>
+        <h1 class="auth-gate__title">${escapeHtml(tituloApp)}</h1>
+        <p class="auth-gate__subtitle">${escapeHtml(subtituloApp)}</p>
+      </div>
+      ${bodyHtml}
+    </div>
+  `;
+
+  if (!state.ui.dataReady) return;
+
+  if (gateMode === 'admin') {
+    bindAdminLoginEvents({
+      prefix: 'gate',
+      onSuccess: () => {
+        refreshPendingReports({ notifyNew: false });
+      }
+    });
+    document.getElementById('gate-to-publisher')?.addEventListener('click', () => {
+      setUiState({ gateMode: 'publisher', gateError: '' });
+    });
+  } else {
+    document.getElementById('gate-publisher-form')?.addEventListener('submit', e => {
+      e.preventDefault();
+      const inputEl = document.getElementById('gate-pub-name');
+      const rememberEl = document.getElementById('gate-remember');
+      const typedName = (inputEl?.value || '').trim();
+      const remembered = Boolean(rememberEl?.checked);
+
+      if (!typedName) {
+        setUiState({ gateError: 'Ingresa tu nombre y apellido para continuar.' });
+        return;
+      }
+
+      const matched = findMatchingPublisher(state.hermanos, typedName);
+      if (!matched) {
+        setUiState({
+          gateError: 'Tu nombre y apellido no coinciden con ningún publicador de la lista asignable. Verifica cómo fuiste registrado o consulta con el administrador.'
+        });
+        document.getElementById('gate-pub-name')?.focus();
+        return;
+      }
+
+      savePublisherSessionStorage({
+        hermanoId: matched.id,
+        nombre: matched.nombre,
+        remembered
+      });
+      setPublisherSession(
+        {
+          authenticated: true,
+          hermanoId: matched.id,
+          nombre: matched.nombre,
+          remembered
+        },
+        { activeTab: 'mis-asignaciones' }
+      );
+      showToast(`Bienvenido(a), ${matched.nombre}.`, 'success');
+      refreshPendingReports({ notifyNew: false });
+    });
+
+    document.getElementById('gate-refresh-list')?.addEventListener('click', () => {
+      loadDataFromSource(true);
+    });
+
+    document.getElementById('gate-to-admin')?.addEventListener('click', () => {
+      setUiState({ gateMode: 'admin', gateError: '' });
+    });
+  }
+}
 
 function renderSystemBanners() {
   const stack = document.getElementById('system-banners');
@@ -78,10 +269,21 @@ function renderSystemBanners() {
     `);
   }
 
+  const pendingReviews = isAdminAuthenticated() ? getVisiblePendingReports() : [];
+  if (pendingReviews.length > 0) {
+    banners.push(`
+      <div class="system-banner system-banner--info" role="status">
+        <span>🔔 Hay <strong>${pendingReviews.length}</strong> departamento(s) marcados por publicadores esperando tu revisión.</span>
+        <button type="button" id="banner-go-reviews" class="btn btn--primary btn--sm">Revisar ahora</button>
+      </div>
+    `);
+  }
+
   stack.innerHTML = banners.join('');
 
   document.getElementById('banner-retry-sync')?.addEventListener('click', () => loadDataFromSource(true));
   document.getElementById('banner-go-admin')?.addEventListener('click', () => switchTab('admin'));
+  document.getElementById('banner-go-reviews')?.addEventListener('click', () => switchTab('admin'));
   document.getElementById('banner-apply-sw-update')?.addEventListener('click', () => {
     if (waitingWorker) {
       waitingWorker.postMessage({ type: 'SKIP_WAITING' });
@@ -94,6 +296,8 @@ function renderHeaderMeta() {
   const titleEl = document.getElementById('header-app-title');
   const subEl = document.getElementById('header-app-subtitle');
   const syncLabelEl = document.getElementById('header-sync-status');
+  const sessionEl = document.getElementById('header-user-session');
+  const switchBtn = document.getElementById('btn-switch-session');
 
   if (badgeEl) {
     const cong = state.configuracion?.congregacion || 'Congregación';
@@ -114,26 +318,93 @@ function renderHeaderMeta() {
       syncLabelEl.textContent = 'Listo';
     }
   }
+
+  const isAdmin = isAdminAuthenticated();
+  const pub = getCurrentPublisher();
+  const authed = isSessionAuthenticated();
+
+  if (switchBtn) {
+    switchBtn.classList.toggle('hidden', !authed);
+  }
+
+  if (sessionEl) {
+    if (!authed) {
+      sessionEl.classList.add('hidden');
+      sessionEl.innerHTML = '';
+    } else {
+      sessionEl.classList.remove('hidden');
+      if (isAdmin && pub) {
+        sessionEl.innerHTML = `
+          <span class="pub-dot" style="background-color:${escapeHtml(pub.color || '#2563eb')};"></span>
+          <span><strong>${escapeHtml(pub.nombre)}</strong> • 🔐 Admin (${escapeHtml(state.admin.username || 'Admin')})</span>
+        `;
+      } else if (isAdmin) {
+        sessionEl.innerHTML = `<span>🔐 Admin: <strong>${escapeHtml(state.admin.username || 'Admin')}</strong></span>`;
+      } else if (pub) {
+        sessionEl.innerHTML = `
+          <span class="pub-dot" style="background-color:${escapeHtml(pub.color || '#2563eb')};"></span>
+          <span>👤 <strong>${escapeHtml(pub.nombre)}</strong>${state.publisher.remembered ? ' • Recordado' : ''}</span>
+        `;
+      }
+    }
+  }
 }
 
 function renderTabsVisibility() {
-  const tabs = ['territorios', 'hermanos', 'admin'];
-  tabs.forEach(tab => {
+  const isAdmin = isAdminAuthenticated();
+  const isPub = isPublisherAuthenticated();
+
+  const visibleByTab = {
+    'mis-asignaciones': isPub,
+    territorios: true,
+    hermanos: isAdmin,
+    admin: true
+  };
+
+  let effectiveActive = state.ui.activeTab;
+  if (!visibleByTab[effectiveActive]) {
+    effectiveActive = isPub ? 'mis-asignaciones' : 'territorios';
+  }
+
+  const terrBtn = document.getElementById('btn-tab-territorios');
+  if (terrBtn) {
+    terrBtn.textContent = isAdmin ? '🏢 Territorios' : '🏢 Mis Torres';
+  }
+
+  const badgeEl = document.getElementById('admin-notif-badge');
+  if (badgeEl) {
+    const count = isAdmin ? getVisiblePendingReports().length : 0;
+    badgeEl.textContent = String(count);
+    badgeEl.classList.toggle('hidden', count === 0);
+  }
+
+  ['mis-asignaciones', 'territorios', 'hermanos', 'admin'].forEach(tab => {
     const panel = document.getElementById(`tab-${tab}`);
     const btn = document.getElementById(`btn-tab-${tab}`);
-    const active = state.ui.activeTab === tab;
-    if (panel) panel.classList.toggle('hidden', !active);
+    const allowed = visibleByTab[tab];
+    const active = allowed && effectiveActive === tab;
+
     if (btn) {
+      btn.classList.toggle('hidden', !allowed);
       btn.classList.toggle('is-active', active);
       btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    }
+    if (panel) {
+      panel.classList.toggle('hidden', !active);
     }
   });
 }
 
 function renderAll() {
+  renderAuthGate();
+  if (!isSessionAuthenticated()) {
+    return;
+  }
+
   renderHeaderMeta();
   renderSystemBanners();
   renderTabsVisibility();
+  renderMyAssignmentsView();
   renderTerritoriesDirectory();
   renderPublishersView();
   renderAdminView();
@@ -147,7 +418,50 @@ function renderAll() {
 }
 
 function switchTab(tabName) {
+  if (tabName === 'hermanos' && !isAdminAuthenticated()) return;
+  if (tabName === 'mis-asignaciones' && !isPublisherAuthenticated()) return;
   setUiState({ activeTab: tabName });
+}
+
+function reconcilePublisherSessionAfterLoad() {
+  if (isPublisherAuthenticated()) {
+    const valid = validatePublisherSessionAgainstDataset();
+    if (!valid) {
+      clearPublisherSessionStorage();
+    }
+    return;
+  }
+
+  if (isAdminAuthenticated()) return;
+
+  const saved = loadPublisherSessionStorage();
+  if (!saved || (!saved.hermanoId && !saved.nombre)) return;
+
+  const matched =
+    (saved.hermanoId && state.hermanos.find(h => h.id === saved.hermanoId)) ||
+    findMatchingPublisher(state.hermanos, saved.nombre);
+
+  if (matched) {
+    savePublisherSessionStorage({
+      hermanoId: matched.id,
+      nombre: matched.nombre,
+      remembered: saved.remembered
+    });
+    setPublisherSession(
+      {
+        authenticated: true,
+        hermanoId: matched.id,
+        nombre: matched.nombre,
+        remembered: saved.remembered
+      },
+      { activeTab: 'mis-asignaciones' }
+    );
+  } else {
+    clearPublisherSessionStorage();
+    setUiState({
+      gateError: 'Tu sesión guardada ya no coincide con la lista actual de publicadores asignables. Ingresa nuevamente.'
+    });
+  }
 }
 
 async function loadDataFromSource(manualRefresh = false) {
@@ -161,11 +475,13 @@ async function loadDataFromSource(manualRefresh = false) {
     const remote = await loadRemoteJsonFiles();
     const syncedAt = remote.remoteUpdatedAt || new Date().toISOString();
 
+    state.ui.dataReady = true;
     setInitialDataset(
       {
         condominios: remote.condominios,
         hermanos: remote.hermanos,
-        configuracion: remote.configuracion
+        configuracion: remote.configuracion,
+        reportes: remote.reportes || []
       },
       {
         source: 'remote',
@@ -179,8 +495,14 @@ async function loadDataFromSource(manualRefresh = false) {
       condominios: state.condominios,
       hermanos: state.hermanos,
       configuracion: state.configuracion,
+      reportes: state.reportes,
       syncedAt
     });
+
+    reconcilePublisherSessionAfterLoad();
+    if (isSessionAuthenticated()) {
+      await refreshPendingReports({ notifyNew: manualRefresh });
+    }
 
     if (manualRefresh) {
       showToast('Datos actualizados desde el servidor.', 'success');
@@ -188,12 +510,14 @@ async function loadDataFromSource(manualRefresh = false) {
   } catch (err) {
     console.warn('Fallo al cargar JSON remotos, intentando caché local:', err);
     const cached = loadCachedSnapshot();
+    state.ui.dataReady = true;
     if (cached) {
       setInitialDataset(
         {
           condominios: cached.condominios || [],
           hermanos: cached.hermanos || [],
-          configuracion: cached.configuracion || null
+          configuracion: cached.configuracion || null,
+          reportes: cached.reportes || []
         },
         {
           source: 'cache',
@@ -202,6 +526,7 @@ async function loadDataFromSource(manualRefresh = false) {
           isStale: true
         }
       );
+      reconcilePublisherSessionAfterLoad();
       if (manualRefresh) {
         showToast('No se pudo conectar. Se muestra la copia guardada en este dispositivo.', 'warning');
       }
@@ -280,9 +605,18 @@ function setupServiceWorkerAndInstall() {
 }
 
 function bindEvents() {
+  document.getElementById('btn-tab-mis-asignaciones')?.addEventListener('click', () => switchTab('mis-asignaciones'));
   document.getElementById('btn-tab-territorios')?.addEventListener('click', () => switchTab('territorios'));
   document.getElementById('btn-tab-hermanos')?.addEventListener('click', () => switchTab('hermanos'));
   document.getElementById('btn-tab-admin')?.addEventListener('click', () => switchTab('admin'));
+
+  document.getElementById('btn-switch-session')?.addEventListener('click', async () => {
+    const ok = await logoutFullSession();
+    if (ok) {
+      setUiState({ gateMode: 'publisher', gateError: '' });
+      showToast('Sesión cerrada. Ingresa con otro nombre o cuenta administrativa.', 'info');
+    }
+  });
 
   document.getElementById('btn-refresh-data')?.addEventListener('click', () => loadDataFromSource(true));
   document.getElementById('btn-nuevo-condominio')?.addEventListener('click', () => abrirModalCondominio());
@@ -358,15 +692,30 @@ function bindEvents() {
       e.returnValue = '';
     }
   });
+
+  // Consultar reportes pendientes al volver a la pestaña (para notificaciones en tiempo real al admin)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && isAdminAuthenticated() && navigator.onLine) {
+      refreshPendingReports({ notifyNew: true });
+    }
+  });
 }
 
 async function init() {
   setLocalProgressMap(loadLocalProgress());
+  setLocalPendingReportsState(loadLocalPendingReports());
   subscribe(renderAll);
   bindEvents();
   setupServiceWorkerAndInstall();
   renderAll();
   await loadDataFromSource(false);
+
+  // Sondeo suave cada 45s cuando el admin tiene la ventana visible
+  window.setInterval(() => {
+    if (document.visibilityState === 'visible' && isAdminAuthenticated() && navigator.onLine) {
+      refreshPendingReports({ notifyNew: true });
+    }
+  }, 45000);
 }
 
 init();

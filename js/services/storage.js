@@ -9,17 +9,20 @@
 
 const CACHE_KEY = 'jw_condominios_cache_v1';
 const LOCAL_PROGRESS_KEY = 'jw_condominios_local_progress_v1';
+const LOCAL_PENDING_REPORTS_KEY = 'jw_condominios_pending_reports_v1';
+const PUBLISHER_SESSION_KEY = 'jw_condominios_publisher_session_v1';
 const LEGACY_CONDOS_KEY = 'predicacion_condominios';
 const LEGACY_HERMANOS_KEY = 'predicacion_hermanos';
 
-export function saveCachedSnapshot({ condominios, hermanos, configuracion, syncedAt }) {
+export function saveCachedSnapshot({ condominios, hermanos, configuracion, reportes = [], syncedAt }) {
   try {
     const payload = {
       version: 1,
       syncedAt: syncedAt || new Date().toISOString(),
       condominios,
       hermanos,
-      configuracion
+      configuracion,
+      reportes
     };
     localStorage.setItem(CACHE_KEY, JSON.stringify(payload));
   } catch (err) {
@@ -36,6 +39,76 @@ export function loadCachedSnapshot() {
     return parsed;
   } catch {
     return null;
+  }
+}
+
+export function savePublisherSessionStorage({ hermanoId, nombre, remembered = false }) {
+  const payload = JSON.stringify({
+    hermanoId: String(hermanoId || ''),
+    nombre: String(nombre || ''),
+    remembered: Boolean(remembered),
+    savedAt: new Date().toISOString()
+  });
+  try {
+    if (remembered) {
+      localStorage.setItem(PUBLISHER_SESSION_KEY, payload);
+      sessionStorage.removeItem(PUBLISHER_SESSION_KEY);
+    } else {
+      sessionStorage.setItem(PUBLISHER_SESSION_KEY, payload);
+      localStorage.removeItem(PUBLISHER_SESSION_KEY);
+    }
+  } catch (err) {
+    console.warn('No se pudo guardar sesión del publicador:', err);
+  }
+}
+
+export function loadPublisherSessionStorage() {
+  try {
+    const fromLocal = localStorage.getItem(PUBLISHER_SESSION_KEY);
+    if (fromLocal) {
+      const parsed = JSON.parse(fromLocal);
+      if (parsed?.hermanoId) return { ...parsed, remembered: true };
+    }
+    const fromSession = sessionStorage.getItem(PUBLISHER_SESSION_KEY);
+    if (fromSession) {
+      const parsed = JSON.parse(fromSession);
+      if (parsed?.hermanoId) return { ...parsed, remembered: false };
+    }
+  } catch {
+    // ignorar
+  }
+  return null;
+}
+
+export function clearPublisherSessionStorage() {
+  try {
+    localStorage.removeItem(PUBLISHER_SESSION_KEY);
+  } catch {
+    // ignorar
+  }
+  try {
+    sessionStorage.removeItem(PUBLISHER_SESSION_KEY);
+  } catch {
+    // ignorar
+  }
+}
+
+export function loadLocalPendingReports() {
+  try {
+    const raw = localStorage.getItem(LOCAL_PENDING_REPORTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalPendingReports(reports) {
+  try {
+    localStorage.setItem(LOCAL_PENDING_REPORTS_KEY, JSON.stringify(Array.isArray(reports) ? reports : []));
+  } catch (err) {
+    console.warn('No se pudo guardar reportes locales pendientes:', err);
   }
 }
 

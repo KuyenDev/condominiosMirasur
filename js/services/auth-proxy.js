@@ -13,25 +13,31 @@ function normalizeEndpoint(url) {
   return String(url || '').trim().replace(/\/+$/, '');
 }
 
-async function proxyFetch(path, options = {}) {
-  if (!activeEndpoint) {
+async function proxyFetch(path, options = {}, endpointOverride = '') {
+  const endpoint = normalizeEndpoint(endpointOverride) || activeEndpoint;
+  if (!endpoint) {
     throw new Error('No hay URL de servidor de cuentas configurada.');
   }
 
+  const useAuth = options.useAdminAuth !== false && Boolean(memoryTicket);
   const headers = {
     ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-    ...(memoryTicket ? { Authorization: `Bearer ${memoryTicket}` } : {}),
+    ...(useAuth ? { Authorization: `Bearer ${memoryTicket}` } : {}),
     ...(options.headers || {})
   };
 
-  const res = await fetch(`${activeEndpoint}${path}`, {
-    ...options,
+  const res = await fetch(`${endpoint}${path}`, {
+    method: options.method || 'GET',
+    body: options.body,
     headers
   });
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.error || `Error del servidor (${res.status}).`);
+    const err = new Error(data.error || `Error del servidor (${res.status}).`);
+    err.status = res.status;
+    if (res.status === 404) err.code = 'WORKER_OUTDATED';
+    throw err;
   }
   return data;
 }
@@ -47,6 +53,7 @@ export async function authenticateWithProxy({ endpoint, username, password }) {
 
   const res = await proxyFetch('/login', {
     method: 'POST',
+    useAdminAuth: false,
     body: JSON.stringify({ username, password })
   });
 
@@ -71,10 +78,59 @@ export async function fetchDataViaProxy() {
   return proxyFetch('/data', { method: 'GET' });
 }
 
+export async function fetchReportsViaProxy({ endpoint = '', hermanoId = '' } = {}) {
+  const cleanEndpoint = normalizeEndpoint(endpoint) || activeEndpoint;
+  if (!cleanEndpoint) {
+    throw new Error('No hay URL del servidor configurada.');
+  }
+  if (memoryTicket) {
+    return proxyFetch('/reports', { method: 'GET', useAdminAuth: true }, cleanEndpoint);
+  }
+  const cleanId = String(hermanoId || '').trim();
+  if (!cleanId) return { reportes: [] };
+  return proxyFetch(`/reports?hermanoId=${encodeURIComponent(cleanId)}`, {
+    method: 'GET',
+    useAdminAuth: false
+  }, cleanEndpoint);
+}
+
+export async function submitPublisherReportViaProxy({
+  endpoint,
+  hermanoId,
+  hermanoNombre,
+  condoId,
+  edificioId,
+  deptoId,
+  action = 'mark',
+  nota = ''
+}) {
+  const cleanEndpoint = normalizeEndpoint(endpoint) || activeEndpoint;
+  if (!cleanEndpoint) {
+    const err = new Error('No hay servidor de reportes configurado.');
+    err.code = 'NO_ENDPOINT';
+    throw err;
+  }
+  return proxyFetch('/reports', {
+    method: 'POST',
+    useAdminAuth: false,
+    body: JSON.stringify({
+      hermanoId,
+      hermanoNombre,
+      condoId,
+      edificioId,
+      deptoId,
+      action,
+      nota
+    })
+  }, cleanEndpoint);
+}
+
 export async function commitDataViaProxy({
   condominiosPayload,
   hermanosPayload,
   configuracionPayload,
+  reportesPayload = null,
+  resolvedReportIds = [],
   expectedHeadSha = null,
   commitMessage = 'Actualizar datos'
 }) {
@@ -84,6 +140,8 @@ export async function commitDataViaProxy({
       condominiosPayload,
       hermanosPayload,
       configuracionPayload,
+      reportesPayload,
+      resolvedReportIds,
       expectedHeadSha,
       commitMessage
     })

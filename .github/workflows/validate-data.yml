@@ -28,6 +28,7 @@ jobs:
               'data/condominios.json',
               'data/hermanos.json',
               'data/configuracion.json',
+              'data/reportes.json',
               'data/schema.json',
           ]
           for path_str in required_files:
@@ -41,6 +42,9 @@ jobs:
 
           hermanos = json.loads(Path('data/hermanos.json').read_text(encoding='utf-8'))
           assert isinstance(hermanos.get('hermanos'), list), 'hermanos debe ser una lista'
+
+          reportes = json.loads(Path('data/reportes.json').read_text(encoding='utf-8'))
+          assert isinstance(reportes.get('reportes'), list), 'reportes debe ser una lista'
 
           print('Validación JSON completada correctamente.')
           EOF

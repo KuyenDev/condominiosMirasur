@@ -25,7 +25,10 @@
 <body>
   <a class="skip-link" href="#main-content">Ir al contenido principal</a>
 
-  <div class="app-shell">
+  <!-- Puerta de acceso obligatoria (Publicador por nombre y apellido o Admin) -->
+  <div id="auth-gate" class="auth-gate hidden" role="region" aria-label="Inicio de sesión"></div>
+
+  <div id="app-shell" class="app-shell hidden">
     <!-- Banners de estado: offline, caché antigua, actualización PWA, cambios sin publicar -->
     <div id="system-banners" class="status-bar-stack" aria-live="polite"></div>
 
@@ -42,24 +45,31 @@
             Organización metódica de cartas y visitas en condominios y torres
           </p>
           <div class="app-header__meta">
+            <div id="header-user-session" class="session-pill hidden"></div>
             <span id="header-sync-status">Cargando datos...</span>
           </div>
         </div>
 
         <div class="app-header__nav-wrap">
           <nav class="tab-nav" role="tablist" aria-label="Secciones principales">
+            <button type="button" role="tab" aria-selected="false" aria-controls="tab-mis-asignaciones" id="btn-tab-mis-asignaciones" class="tab-btn hidden">
+              📋 Mis Asignaciones
+            </button>
             <button type="button" role="tab" aria-selected="true" aria-controls="tab-territorios" id="btn-tab-territorios" class="tab-btn is-active">
               🏢 Territorios
             </button>
-            <button type="button" role="tab" aria-selected="false" aria-controls="tab-hermanos" id="btn-tab-hermanos" class="tab-btn">
+            <button type="button" role="tab" aria-selected="false" aria-controls="tab-hermanos" id="btn-tab-hermanos" class="tab-btn hidden">
               👥 Publicadores
             </button>
             <button type="button" role="tab" aria-selected="false" aria-controls="tab-admin" id="btn-tab-admin" class="tab-btn">
-              🔐 Admin
+              🔐 Admin <span id="admin-notif-badge" class="tab-badge hidden">0</span>
             </button>
           </nav>
 
           <div class="header-actions">
+            <button type="button" id="btn-switch-session" class="btn btn--secondary btn--sm hidden" title="Ingresar con otra persona o cerrar sesión">
+              🔄 Cambiar de sesión
+            </button>
             <button type="button" id="btn-refresh-data" class="btn btn--secondary btn--sm" title="Consultar últimas actualizaciones">
               ↻ Actualizar
             </button>
@@ -72,13 +82,18 @@
     </header>
 
     <main id="main-content">
-      <!-- PESTAÑA 1: TERRITORIOS -->
+      <!-- PESTAÑA PUBLICADOR: MIS ASIGNACIONES -->
+      <section id="tab-mis-asignaciones" class="tab-panel hidden" role="tabpanel" aria-labelledby="btn-tab-mis-asignaciones">
+        <div id="mis-asignaciones-view" class="panel-surface"></div>
+      </section>
+
+      <!-- PESTAÑA TERRITORIOS / MIS TORRES -->
       <section id="tab-territorios" class="tab-panel" role="tabpanel" aria-labelledby="btn-tab-territorios">
         <div class="section-toolbar">
           <div class="section-toolbar__top">
             <div>
-              <h2 class="section-title">Directorio de Condominios</h2>
-              <p class="section-desc">Selecciona un condominio para ver sus torres, pisos y departamentos asignados.</p>
+              <h2 id="territorios-section-title" class="section-title">Directorio de Condominios</h2>
+              <p id="territorios-section-desc" class="section-desc">Selecciona un condominio para ver sus torres, pisos y departamentos asignados.</p>
             </div>
             <button type="button" id="btn-nuevo-condominio" class="btn btn--primary hidden">
               + Nuevo Condominio
@@ -97,7 +112,7 @@
         <div id="app-container" class="cards-grid"></div>
       </section>
 
-      <!-- PESTAÑA 2: PUBLICADORES / HERMANOS -->
+      <!-- PESTAÑA 2: PUBLICADORES / HERMANOS (SOLO ADMIN) -->
       <section id="tab-hermanos" class="tab-panel hidden" role="tabpanel" aria-labelledby="btn-tab-hermanos">
         <div class="panel-surface">
           <div class="section-toolbar__top">

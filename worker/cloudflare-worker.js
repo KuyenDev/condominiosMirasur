@@ -208,6 +208,100 @@ async function ghRequest(path, env, options = {}) {
   return res.json();
 }
 
+function normalizePersonName(value) {
+  return String(value || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+function stripHonorific(norm) {
+  return norm.replace(/^(?:hno|hna)\.?\s+/i, '').trim();
+}
+
+function namesMatch(a, b) {
+  const na = normalizePersonName(a);
+  const nb = normalizePersonName(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const sa = stripHonorific(na);
+  const sb = stripHonorific(nb);
+  return Boolean(sa && sb && sa === sb);
+}
+
+async function readRepoJson(basePath, ref, filePath, env) {
+  try {
+    const file = await ghRequest(`${basePath}/contents/${filePath}?ref=${encodeURIComponent(ref)}`, env);
+    return JSON.parse(decodeBase64Utf8(file.content));
+  } catch {
+    return null;
+  }
+}
+
+function extractReportesList(doc) {
+  if (Array.isArray(doc)) return doc;
+  return Array.isArray(doc?.reportes) ? doc.reportes : [];
+}
+
+function filterValidReportes(reportes, condominios, resolvedIds = []) {
+  const resolvedSet = new Set((resolvedIds || []).map(String));
+  const validDeptoMap = new Map();
+
+  (Array.isArray(condominios) ? condominios : []).forEach(c => {
+    (Array.isArray(c.edificios) ? c.edificios : []).forEach(e => {
+      (Array.isArray(e.deptos) ? e.deptos : []).forEach(d => {
+        validDeptoMap.set(String(d.id), d);
+      });
+    });
+  });
+
+  return (Array.isArray(reportes) ? reportes : []).filter(r => {
+    if (!r || !r.id || !r.deptoId) return false;
+    if (resolvedSet.has(String(r.id))) return false;
+    const d = validDeptoMap.get(String(r.deptoId));
+    if (!d || d.excluido || d.estado === 'completado') return false;
+    if (r.hermanoId && d.asignadoId !== r.hermanoId) return false;
+    return true;
+  });
+}
+
+async function commitRepoFiles({ basePath, branch, currentHeadSha, files, commitMessage, env }) {
+  const headCommit = await ghRequest(`${basePath}/git/commits/${currentHeadSha}`, env);
+  const baseTreeSha = headCommit.tree.sha;
+
+  const treeEntries = [];
+  for (const file of files) {
+    const blob = await ghRequest(`${basePath}/git/blobs`, env, {
+      method: 'POST',
+      body: JSON.stringify({ content: encodeBase64Utf8(file.content), encoding: 'base64' })
+    });
+    treeEntries.push({ path: file.path, mode: '100644', type: 'blob', sha: blob.sha });
+  }
+
+  const newTree = await ghRequest(`${basePath}/git/trees`, env, {
+    method: 'POST',
+    body: JSON.stringify({ base_tree: baseTreeSha, tree: treeEntries })
+  });
+
+  const newCommit = await ghRequest(`${basePath}/git/commits`, env, {
+    method: 'POST',
+    body: JSON.stringify({
+      message: commitMessage,
+      tree: newTree.sha,
+      parents: [currentHeadSha]
+    })
+  });
+
+  await ghRequest(`${basePath}/git/refs/heads/${encodeURIComponent(branch)}`, env, {
+    method: 'PATCH',
+    body: JSON.stringify({ sha: newCommit.sha, force: false })
+  });
+
+  return newCommit.sha;
+}
+
 export default {
   async fetch(request, env) {
     const cors = getCorsHeaders(request, env);
@@ -264,6 +358,141 @@ export default {
         }, 200, cors);
       }
 
+      if (request.method === 'GET' && url.pathname === '/reports') {
+        if (!env.GITHUB_TOKEN) {
+          return jsonResponse({ error: 'Worker sin configurar (falta GITHUB_TOKEN).' }, 500, cors);
+        }
+
+        const adminSession = await verifySessionToken(request.headers.get('Authorization'), env.SESSION_SECRET || '');
+        const hermanoId = String(url.searchParams.get('hermanoId') || '').trim();
+
+        if (!adminSession && !hermanoId) {
+          return jsonResponse({ error: 'Se requiere sesión administrativa o identificador de publicador.' }, 401, cors);
+        }
+
+        const reportesDoc = await readRepoJson(basePath, branch, 'data/reportes.json', env);
+        const allReportes = extractReportesList(reportesDoc);
+
+        if (adminSession) {
+          return jsonResponse({ reportes: allReportes }, 200, cors);
+        }
+
+        const filtered = allReportes.filter(r => String(r?.hermanoId || '') === hermanoId);
+        return jsonResponse({ reportes: filtered }, 200, cors);
+      }
+
+      if (request.method === 'POST' && url.pathname === '/reports') {
+        if (!env.GITHUB_TOKEN) {
+          return jsonResponse({ error: 'Worker sin configurar (falta GITHUB_TOKEN).' }, 500, cors);
+        }
+
+        const body = await request.json().catch(() => null);
+        const hermanoId = String(body?.hermanoId || '').trim();
+        const hermanoNombre = String(body?.hermanoNombre || '').trim();
+        const condoId = String(body?.condoId || '').trim();
+        const edificioId = String(body?.edificioId || '').trim();
+        const deptoId = String(body?.deptoId || '').trim();
+        const action = body?.action === 'unmark' ? 'unmark' : 'mark';
+        const nota = String(body?.nota || '').trim().slice(0, 240);
+
+        if (!hermanoId || !hermanoNombre || !condoId || !edificioId || !deptoId) {
+          return jsonResponse({ error: 'Faltan datos del publicador o departamento.' }, 400, cors);
+        }
+
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const refData = await ghRequest(`${basePath}/git/ref/heads/${encodeURIComponent(branch)}`, env);
+          const currentHeadSha = refData.object.sha;
+
+          const [hermanosDoc, condosDoc, reportesDoc] = await Promise.all([
+            readRepoJson(basePath, currentHeadSha, 'data/hermanos.json', env),
+            readRepoJson(basePath, currentHeadSha, 'data/condominios.json', env),
+            readRepoJson(basePath, currentHeadSha, 'data/reportes.json', env)
+          ]);
+
+          const hermanos = Array.isArray(hermanosDoc) ? hermanosDoc : (hermanosDoc?.hermanos || []);
+          const condominios = Array.isArray(condosDoc) ? condosDoc : (condosDoc?.condominios || []);
+
+          const matchedHermano = hermanos.find(h => String(h.id) === hermanoId && namesMatch(h.nombre, hermanoNombre));
+          if (!matchedHermano) {
+            return jsonResponse({ error: 'No estás autorizado o tu nombre no coincide con la lista actual de publicadores.' }, 403, cors);
+          }
+
+          const condo = condominios.find(c => String(c.id) === condoId);
+          const edificio = condo?.edificios?.find(e => String(e.id) === edificioId);
+          const depto = edificio?.deptos?.find(d => String(d.id) === deptoId);
+
+          if (!condo || !edificio || !depto) {
+            return jsonResponse({ error: 'Departamento no encontrado.' }, 404, cors);
+          }
+          if (depto.excluido) {
+            return jsonResponse({ error: 'Este departamento está excluido.' }, 400, cors);
+          }
+          if (String(depto.asignadoId || '') !== String(matchedHermano.id)) {
+            return jsonResponse({ error: 'Solo puedes reportar departamentos asignados a tu nombre.' }, 403, cors);
+          }
+          if (action === 'mark' && depto.estado === 'completado') {
+            return jsonResponse({ error: 'Este departamento ya fue marcado como finalizado definitivo por administración.' }, 409, cors);
+          }
+
+          const currentReportes = extractReportesList(reportesDoc);
+          const remaining = currentReportes.filter(
+            r => !(String(r.deptoId) === deptoId && String(r.hermanoId) === String(matchedHermano.id))
+          );
+
+          let createdReport = null;
+          const now = new Date().toISOString();
+          if (action === 'mark') {
+            createdReport = {
+              id: `rep_${crypto.randomUUID().slice(0, 12)}`,
+              condoId: String(condo.id),
+              condoNombre: String(condo.nombre || ''),
+              edificioId: String(edificio.id),
+              edificioNombre: String(edificio.nombre || ''),
+              deptoId: String(depto.id),
+              deptoNumero: String(depto.numero || ''),
+              piso: Number.isFinite(Number(depto.piso)) ? Number(depto.piso) : 1,
+              hermanoId: String(matchedHermano.id),
+              hermanoNombre: String(matchedHermano.nombre),
+              tipo: 'completado',
+              nota,
+              createdAt: now
+            };
+            remaining.push(createdReport);
+          }
+
+          const reportesPayload = {
+            version: 1,
+            updatedAt: now,
+            reportes: remaining
+          };
+
+          try {
+            await commitRepoFiles({
+              basePath,
+              branch,
+              currentHeadSha,
+              files: [
+                { path: 'data/reportes.json', content: JSON.stringify(reportesPayload, null, 2) + '\n' }
+              ],
+              commitMessage: `[Publicador: ${matchedHermano.nombre}] ${action === 'mark' ? 'Marcar para revisión' : 'Quitar marca'} Depto ${depto.numero}`,
+              env
+            });
+
+            return jsonResponse({
+              ok: true,
+              report: createdReport,
+              reportes: remaining.filter(r => String(r.hermanoId) === String(matchedHermano.id)),
+              updatedAt: now
+            }, 200, cors);
+          } catch (commitErr) {
+            if ((commitErr.status === 409 || commitErr.status === 422) && attempt < 2) {
+              continue;
+            }
+            throw commitErr;
+          }
+        }
+      }
+
       // Rutas protegidas por sesión firmada
       const session = await verifySessionToken(request.headers.get('Authorization'), env.SESSION_SECRET || '');
       if (!session) {
@@ -276,27 +505,21 @@ export default {
           ghRequest(`${basePath}/git/ref/heads/${encodeURIComponent(branch)}`, env)
         ]);
 
-        const readFile = async filePath => {
-          try {
-            const file = await ghRequest(`${basePath}/contents/${filePath}?ref=${encodeURIComponent(branch)}`, env);
-            return JSON.parse(decodeBase64Utf8(file.content));
-          } catch {
-            return null;
-          }
-        };
-
-        const [condosDoc, hermanosDoc, configDoc] = await Promise.all([
-          readFile('data/condominios.json'),
-          readFile('data/hermanos.json'),
-          readFile('data/configuracion.json')
+        const headSha = refInfo.object.sha;
+        const [condosDoc, hermanosDoc, configDoc, reportesDoc] = await Promise.all([
+          readRepoJson(basePath, headSha, 'data/condominios.json', env),
+          readRepoJson(basePath, headSha, 'data/hermanos.json', env),
+          readRepoJson(basePath, headSha, 'data/configuracion.json', env),
+          readRepoJson(basePath, headSha, 'data/reportes.json', env)
         ]);
 
         return jsonResponse({
-          headSha: refInfo.object.sha,
+          headSha,
           repoPrivate: Boolean(repoInfo.private),
           condominios: Array.isArray(condosDoc) ? condosDoc : (condosDoc?.condominios || []),
           hermanos: Array.isArray(hermanosDoc) ? hermanosDoc : (hermanosDoc?.hermanos || []),
-          configuracion: configDoc || null
+          configuracion: configDoc || null,
+          reportes: extractReportesList(reportesDoc)
         }, 200, cors);
       }
 
@@ -310,52 +533,62 @@ export default {
         const currentHeadSha = refData.object.sha;
 
         if (body.expectedHeadSha && body.expectedHeadSha !== currentHeadSha) {
-          return jsonResponse({
-            error: 'Se detectaron cambios más recientes en GitHub. Recarga los datos antes de publicar.'
-          }, 409, cors);
+          let onlyReportsChanged = false;
+          try {
+            const cmp = await ghRequest(
+              `${basePath}/compare/${encodeURIComponent(body.expectedHeadSha)}...${encodeURIComponent(currentHeadSha)}`,
+              env
+            );
+            const changedFiles = Array.isArray(cmp?.files) ? cmp.files : [];
+            onlyReportsChanged = changedFiles.length > 0 && changedFiles.every(f => f.filename === 'data/reportes.json');
+          } catch {
+            onlyReportsChanged = false;
+          }
+
+          if (!onlyReportsChanged) {
+            return jsonResponse({
+              error: 'Se detectaron cambios más recientes en GitHub. Recarga los datos antes de publicar.'
+            }, 409, cors);
+          }
         }
 
-        const headCommit = await ghRequest(`${basePath}/git/commits/${currentHeadSha}`, env);
-        const baseTreeSha = headCommit.tree.sha;
+        const remoteReportesDoc = await readRepoJson(basePath, currentHeadSha, 'data/reportes.json', env);
+        const remoteReportes = extractReportesList(remoteReportesDoc);
+        const condominiosList = body.condominiosPayload?.condominios || [];
+        const resolvedIds = Array.isArray(body.resolvedReportIds) ? body.resolvedReportIds : [];
+        const baseReportes = remoteReportes.length > 0
+          ? remoteReportes
+          : extractReportesList(body.reportesPayload);
+
+        const finalReportes = filterValidReportes(baseReportes, condominiosList, resolvedIds);
+        const now = new Date().toISOString();
+        const finalReportesPayload = {
+          version: 1,
+          updatedAt: now,
+          reportes: finalReportes
+        };
 
         const files = [
           { path: 'data/condominios.json', content: JSON.stringify(body.condominiosPayload, null, 2) + '\n' },
           { path: 'data/hermanos.json', content: JSON.stringify(body.hermanosPayload, null, 2) + '\n' },
-          { path: 'data/configuracion.json', content: JSON.stringify(body.configuracionPayload, null, 2) + '\n' }
+          { path: 'data/configuracion.json', content: JSON.stringify(body.configuracionPayload, null, 2) + '\n' },
+          { path: 'data/reportes.json', content: JSON.stringify(finalReportesPayload, null, 2) + '\n' }
         ];
 
-        const treeEntries = [];
-        for (const file of files) {
-          const blob = await ghRequest(`${basePath}/git/blobs`, env, {
-            method: 'POST',
-            body: JSON.stringify({ content: encodeBase64Utf8(file.content), encoding: 'base64' })
-          });
-          treeEntries.push({ path: file.path, mode: '100644', type: 'blob', sha: blob.sha });
-        }
-
-        const newTree = await ghRequest(`${basePath}/git/trees`, env, {
-          method: 'POST',
-          body: JSON.stringify({ base_tree: baseTreeSha, tree: treeEntries })
-        });
-
         const baseMsg = String(body.commitMessage || 'Actualizar datos').trim();
-        const newCommit = await ghRequest(`${basePath}/git/commits`, env, {
-          method: 'POST',
-          body: JSON.stringify({
-            message: `[${session.sub}] ${baseMsg}`,
-            tree: newTree.sha,
-            parents: [currentHeadSha]
-          })
-        });
-
-        await ghRequest(`${basePath}/git/refs/heads/${encodeURIComponent(branch)}`, env, {
-          method: 'PATCH',
-          body: JSON.stringify({ sha: newCommit.sha, force: false })
+        const commitSha = await commitRepoFiles({
+          basePath,
+          branch,
+          currentHeadSha,
+          files,
+          commitMessage: `[${session.sub}] ${baseMsg}`,
+          env
         });
 
         return jsonResponse({
-          commitSha: newCommit.sha,
-          committedAt: new Date().toISOString()
+          commitSha,
+          committedAt: now,
+          reportes: finalReportes
         }, 200, cors);
       }
 

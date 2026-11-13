@@ -6,11 +6,14 @@
  */
 
 import {
+  getVisiblePendingReports,
   isAdminAuthenticated,
   normalizeDataset,
   replaceAllDataAdmin,
   setAdminSession,
   setInitialDataset,
+  setPublisherSession,
+  setRemoteReportes,
   setSyncState,
   state
 } from '../core/state.js';
@@ -28,6 +31,7 @@ import {
   clearProxySession,
   commitDataViaProxy,
   fetchDataViaProxy,
+  fetchReportsViaProxy,
   hasActiveProxySession
 } from '../services/auth-proxy.js';
 import {
@@ -39,7 +43,13 @@ import {
   getActiveRepoConfig,
   hasActiveGitHubSession
 } from '../services/github.js';
-import { loadCachedSnapshot, readLegacyV022Data, saveCachedSnapshot } from '../services/storage.js';
+import {
+  clearPublisherSessionStorage,
+  loadCachedSnapshot,
+  readLegacyV022Data,
+  saveCachedSnapshot,
+  saveLocalPendingReports
+} from '../services/storage.js';
 
 let preOverwriteSnapshot = null;
 
@@ -52,7 +62,8 @@ function captureSnapshot() {
     capturedAt: new Date().toISOString(),
     condominios: cloneDeep(state.condominios),
     hermanos: cloneDeep(state.hermanos),
-    configuracion: cloneDeep(state.configuracion)
+    configuracion: cloneDeep(state.configuracion),
+    reportes: cloneDeep(state.reportes)
   };
 }
 
@@ -82,7 +93,8 @@ export async function loginAdminWithGitHub({ owner, repo, branch, token }) {
     const norm = normalizeDataset({
       condominios: latest.condominios,
       hermanos: latest.hermanos,
-      configuracion: latest.configuracion || state.configuracion
+      configuracion: latest.configuracion || state.configuracion,
+      reportes: latest.reportes || []
     });
     // Asegurar que los datos de repo en configuracion queden actualizados
     norm.configuracion.github = {
@@ -103,6 +115,7 @@ export async function loginAdminWithGitHub({ owner, repo, branch, token }) {
       condominios: state.condominios,
       hermanos: state.hermanos,
       configuracion: state.configuracion,
+      reportes: state.reportes,
       syncedAt: now
     });
   } catch (err) {
@@ -135,7 +148,8 @@ export async function loginAdminWithAccount({ endpoint, username, password }) {
     const norm = normalizeDataset({
       condominios: latest.condominios,
       hermanos: latest.hermanos,
-      configuracion: latest.configuracion || state.configuracion
+      configuracion: latest.configuracion || state.configuracion,
+      reportes: latest.reportes || []
     });
     if (!norm.configuracion.authEndpoint) {
       norm.configuracion.authEndpoint = authResult.endpoint;
@@ -154,6 +168,7 @@ export async function loginAdminWithAccount({ endpoint, username, password }) {
       condominios: state.condominios,
       hermanos: state.hermanos,
       configuracion: state.configuracion,
+      reportes: state.reportes,
       syncedAt: now
     });
   } catch (err) {
@@ -174,6 +189,45 @@ export function loginAdminLocalDev() {
     canPush: false
   });
   setSyncState({ source: 'local' });
+}
+
+export async function refreshPendingReports({ notifyNew = false } = {}) {
+  const endpoint = (state.configuracion?.authEndpoint || '').trim();
+  const isAdmin = isAdminAuthenticated();
+  const pubId = state.publisher?.hermanoId || '';
+
+  if (!endpoint || !navigator.onLine) return false;
+  if (!isAdmin && !pubId) return false;
+
+  try {
+    const prevIds = new Set(getVisiblePendingReports().map(r => r.id));
+    const res = await fetchReportsViaProxy({ endpoint, hermanoId: isAdmin ? '' : pubId });
+    const incoming = Array.isArray(res?.reportes) ? res.reportes : [];
+
+    if (isAdmin) {
+      setRemoteReportes(incoming);
+    } else {
+      // Actualizar solo reportes del publicador actual
+      const others = (state.reportes || []).filter(r => r.hermanoId !== pubId);
+      setRemoteReportes([...others, ...incoming]);
+    }
+    state.ui.workerOutdated = false;
+
+    if (notifyNew && isAdmin) {
+      const fresh = getVisiblePendingReports().filter(r => !prevIds.has(r.id));
+      if (fresh.length === 1) {
+        showToast(`🔔 Nuevo aviso: ${fresh[0].hermanoNombre} marcó Depto ${fresh[0].deptoNumero} (${fresh[0].edificioNombre}).`, 'info', 6000);
+      } else if (fresh.length > 1) {
+        showToast(`🔔 Llegaron ${fresh.length} nuevos reportes de publicadores para revisar.`, 'info', 6000);
+      }
+    }
+    return true;
+  } catch (err) {
+    if (err.code === 'WORKER_OUTDATED') {
+      state.ui.workerOutdated = true;
+    }
+    return false;
+  }
 }
 
 export async function logoutAdmin() {
@@ -197,6 +251,7 @@ export async function logoutAdmin() {
     canPush: false
   });
   setSyncState({ dirtyCount: 0 });
+  state.resolvedReportIds = [];
 
   // Si había cambios en borrador descartados, restaurar la vista pública oficial
   if (hadDirty) {
@@ -206,7 +261,8 @@ export async function logoutAdmin() {
         {
           condominios: remote.condominios,
           hermanos: remote.hermanos,
-          configuracion: remote.configuracion
+          configuracion: remote.configuracion,
+          reportes: remote.reportes || []
         },
         {
           source: 'remote',
@@ -222,7 +278,8 @@ export async function logoutAdmin() {
           {
             condominios: cached.condominios || [],
             hermanos: cached.hermanos || [],
-            configuracion: cached.configuracion || null
+            configuracion: cached.configuracion || null,
+            reportes: cached.reportes || []
           },
           {
             source: 'cache',
@@ -234,6 +291,25 @@ export async function logoutAdmin() {
       }
     }
   }
+  return true;
+}
+
+export async function logoutFullSession() {
+  if (isAdminAuthenticated()) {
+    const ok = await logoutAdmin();
+    if (!ok) return false;
+  }
+  clearPublisherSessionStorage();
+  setPublisherSession({
+    authenticated: false,
+    hermanoId: null,
+    nombre: null,
+    remembered: false
+  });
+  state.ui.condoOperativoId = null;
+  state.ui.torreOperativaId = null;
+  state.ui.gateMode = 'publisher';
+  state.ui.gateError = '';
   return true;
 }
 
@@ -261,7 +337,8 @@ export async function syncFromGitHubAdmin() {
     {
       condominios: latest.condominios,
       hermanos: latest.hermanos,
-      configuracion: latest.configuracion || state.configuracion
+      configuracion: latest.configuracion || state.configuracion,
+      reportes: latest.reportes || []
     },
     {
       source: 'remote',
@@ -275,6 +352,7 @@ export async function syncFromGitHubAdmin() {
     condominios: state.condominios,
     hermanos: state.hermanos,
     configuracion: state.configuracion,
+    reportes: state.reportes,
     syncedAt: now
   });
   return true;
@@ -299,7 +377,7 @@ export async function publishToGitHubAdmin(customMessage = '') {
     }
   }
 
-  const { condominiosPayload, hermanosPayload, configuracionPayload, updatedAt } = buildDataPayloads(state, {
+  const { condominiosPayload, hermanosPayload, configuracionPayload, reportesPayload, updatedAt } = buildDataPayloads(state, {
     sanitizePublicPrivacy
   });
 
@@ -310,9 +388,17 @@ export async function publishToGitHubAdmin(customMessage = '') {
     condominiosPayload,
     hermanosPayload,
     configuracionPayload,
+    reportesPayload,
+    resolvedReportIds: state.resolvedReportIds || [],
     expectedHeadSha: state.sync.remoteHeadSha,
     commitMessage: message
   });
+
+  state.resolvedReportIds = [];
+  if (Array.isArray(res.reportes)) {
+    setRemoteReportes(res.reportes);
+  }
+  saveLocalPendingReports(state.localPendingReports);
 
   setSyncState({
     dirtyCount: 0,
@@ -328,6 +414,7 @@ export async function publishToGitHubAdmin(customMessage = '') {
     condominios: state.condominios,
     hermanos: state.hermanos,
     configuracion: state.configuracion,
+    reportes: state.reportes,
     syncedAt: res.committedAt
   });
 
@@ -335,7 +422,7 @@ export async function publishToGitHubAdmin(customMessage = '') {
 }
 
 export function exportFullBackupJson() {
-  const { condominiosPayload, hermanosPayload, configuracionPayload } = buildDataPayloads(state, {
+  const { condominiosPayload, hermanosPayload, configuracionPayload, reportesPayload } = buildDataPayloads(state, {
     sanitizePublicPrivacy: false
   });
   const dateTag = new Date().toISOString().slice(0, 10);
@@ -344,20 +431,22 @@ export function exportFullBackupJson() {
     version: 1,
     condominios: condominiosPayload.condominios,
     hermanos: hermanosPayload.hermanos,
-    configuracion: configuracionPayload
+    configuracion: configuracionPayload,
+    reportes: reportesPayload.reportes
   });
 }
 
 export function exportIndividualDataFiles() {
   const isPublicRepo = state.sync.repoPrivate === false;
   const hideContacts = state.configuracion?.privacidad?.ocultarContactoEnRepoPublico !== false;
-  const { condominiosPayload, hermanosPayload, configuracionPayload } = buildDataPayloads(state, {
+  const { condominiosPayload, hermanosPayload, configuracionPayload, reportesPayload } = buildDataPayloads(state, {
     sanitizePublicPrivacy: isPublicRepo && hideContacts
   });
 
   triggerJsonDownload('condominios.json', condominiosPayload);
   window.setTimeout(() => triggerJsonDownload('hermanos.json', hermanosPayload), 250);
   window.setTimeout(() => triggerJsonDownload('configuracion.json', configuracionPayload), 500);
+  window.setTimeout(() => triggerJsonDownload('reportes.json', reportesPayload), 750);
 }
 
 export async function importBackupFileAdmin(file) {

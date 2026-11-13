@@ -106,6 +106,36 @@
           }
         }
       }
+    },
+    "reportes.json": {
+      "type": "object",
+      "required": ["version", "reportes"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "updatedAt": { "type": ["string", "null"], "format": "date-time" },
+        "reportes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "condoId", "edificioId", "deptoId", "hermanoId", "hermanoNombre", "createdAt"],
+            "properties": {
+              "id": { "type": "string" },
+              "condoId": { "type": "string" },
+              "condoNombre": { "type": "string" },
+              "edificioId": { "type": "string" },
+              "edificioNombre": { "type": "string" },
+              "deptoId": { "type": "string" },
+              "deptoNumero": { "type": "string" },
+              "piso": { "type": "integer" },
+              "hermanoId": { "type": "string" },
+              "hermanoNombre": { "type": "string" },
+              "tipo": { "type": "string", "enum": ["completado"] },
+              "nota": { "type": "string" },
+              "createdAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
     }
   }
 }

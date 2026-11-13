@@ -7,6 +7,8 @@ import {
   cloneDeep,
   extraerPiso,
   generateId,
+  normalizePersonName,
+  personNamesMatch,
   procesarTextoDeptosYPisos,
   resolveColorId
 } from './utils.js';
@@ -37,14 +39,21 @@ export const state = {
   condominios: [],
   hermanos: [],
   configuracion: cloneDeep(DEFAULT_CONFIG),
+  reportes: [],
+  localPendingReports: [],
+  resolvedReportIds: [],
   ui: {
-    activeTab: 'territorios',
+    activeTab: 'mis-asignaciones',
     searchCondo: '',
     searchHermano: '',
     selectedPublisherId: '',
     condoOperativoId: null,
     torreOperativaId: null,
-    towerClickMode: 'toggle' // 'toggle' | 'detail'
+    towerClickMode: 'toggle', // 'toggle' | 'detail'
+    gateMode: 'publisher', // 'publisher' | 'admin'
+    gateError: '',
+    dataReady: false,
+    workerOutdated: false
   },
   sync: {
     source: 'remote', // 'remote' | 'cache' | 'local'
@@ -58,13 +67,19 @@ export const state = {
     repoPrivate: null,
     swUpdateWaiting: false
   },
+  publisher: {
+    authenticated: false,
+    hermanoId: null,
+    nombre: null,
+    remembered: false
+  },
   admin: {
     authenticated: false,
-    mode: null, // 'github' | 'local-dev' | null
+    mode: null, // 'github' | 'proxy' | 'local-dev' | null
     username: null,
     canPush: false
   },
-  localProgress: {} // { [deptoId]: boolean } - seguimiento personal en dispositivo de consulta
+  localProgress: {} // legado / respaldo dispositivo
 };
 
 export function subscribe(listener) {
@@ -92,6 +107,23 @@ export function isAdminAuthenticated() {
   );
 }
 
+export function isPublisherAuthenticated() {
+  return Boolean(
+    state.publisher.authenticated &&
+      state.publisher.hermanoId &&
+      getPublisherById(state.publisher.hermanoId)
+  );
+}
+
+export function isSessionAuthenticated() {
+  return isAdminAuthenticated() || isPublisherAuthenticated();
+}
+
+export function getCurrentPublisher() {
+  if (!state.publisher.authenticated || !state.publisher.hermanoId) return null;
+  return getPublisherById(state.publisher.hermanoId);
+}
+
 function assertAdmin() {
   if (!isAdminAuthenticated()) {
     throw new Error('Acceso denegado: debes iniciar sesión en el Panel de Administración.');
@@ -102,10 +134,58 @@ function markDirty() {
   state.sync.dirtyCount += 1;
 }
 
+function normalizeReportesList(rawReportes, condominios, hermanos) {
+  const validHermanos = new Map((hermanos || []).map(h => [h.id, h]));
+  const deptoLookup = new Map();
+
+  (condominios || []).forEach(c => {
+    (c.edificios || []).forEach(e => {
+      (e.deptos || []).forEach(d => {
+        deptoLookup.set(d.id, { condo: c, edificio: e, depto: d });
+      });
+    });
+  });
+
+  const seenDepto = new Set();
+  const result = [];
+
+  (Array.isArray(rawReportes) ? rawReportes : []).forEach(r => {
+    if (!r || !r.deptoId || !r.hermanoId) return;
+    const entry = deptoLookup.get(String(r.deptoId));
+    const hermano = validHermanos.get(String(r.hermanoId));
+    if (!entry || !hermano) return;
+
+    const { condo, edificio, depto } = entry;
+    if (depto.excluido || depto.estado === 'completado') return;
+    if (depto.asignadoId !== hermano.id) return;
+    if (seenDepto.has(depto.id)) return;
+    seenDepto.add(depto.id);
+
+    result.push({
+      id: r.id ? String(r.id) : generateId('rep'),
+      condoId: condo.id,
+      condoNombre: condo.nombre,
+      edificioId: edificio.id,
+      edificioNombre: edificio.nombre,
+      deptoId: depto.id,
+      deptoNumero: depto.numero,
+      piso: depto.piso,
+      hermanoId: hermano.id,
+      hermanoNombre: hermano.nombre,
+      tipo: 'completado',
+      nota: r.nota ? String(r.nota).trim() : '',
+      createdAt: r.createdAt || new Date().toISOString(),
+      isLocalOnly: Boolean(r.isLocalOnly)
+    });
+  });
+
+  return result;
+}
+
 /**
  * Normaliza datos provenientes de JSON v1 o de la versión heredada v0.2.2.
  */
-export function normalizeDataset({ condominios = [], hermanos = [], configuracion = null } = {}) {
+export function normalizeDataset({ condominios = [], hermanos = [], configuracion = null, reportes = [] } = {}) {
   const safeConfig = {
     ...cloneDeep(DEFAULT_CONFIG),
     ...(configuracion && typeof configuracion === 'object' ? configuracion : {}),
@@ -197,10 +277,13 @@ export function normalizeDataset({ condominios = [], hermanos = [], configuracio
     }
   });
 
+  const normalizedReportes = normalizeReportesList(reportes, normalizedCondos, normalizedHermanos);
+
   return {
     condominios: normalizedCondos,
     hermanos: normalizedHermanos,
-    configuracion: safeConfig
+    configuracion: safeConfig,
+    reportes: normalizedReportes
   };
 }
 
@@ -209,8 +292,59 @@ export function setInitialDataset(rawData, syncPatch = {}) {
   state.condominios = norm.condominios;
   state.hermanos = norm.hermanos;
   state.configuracion = norm.configuracion;
+  state.reportes = norm.reportes;
+  state.resolvedReportIds = [];
+  if (Array.isArray(state.localPendingReports) && state.localPendingReports.length > 0) {
+    state.localPendingReports = normalizeReportesList(state.localPendingReports, state.condominios, state.hermanos);
+  }
   Object.assign(state.sync, syncPatch);
   notify();
+}
+
+export function setPublisherSession(session, { activeTab = null } = {}) {
+  state.publisher = {
+    authenticated: Boolean(session?.authenticated && session?.hermanoId),
+    hermanoId: session?.hermanoId || null,
+    nombre: session?.nombre || null,
+    remembered: Boolean(session?.remembered)
+  };
+  if (state.publisher.authenticated) {
+    state.ui.gateError = '';
+    if (activeTab) {
+      state.ui.activeTab = activeTab;
+    } else if (!isAdminAuthenticated()) {
+      state.ui.activeTab = 'mis-asignaciones';
+    }
+  }
+  notify();
+}
+
+export function validatePublisherSessionAgainstDataset() {
+  if (!state.publisher.authenticated) return true;
+  const byId = getPublisherById(state.publisher.hermanoId);
+  if (byId) {
+    state.publisher.nombre = byId.nombre;
+    notify();
+    return true;
+  }
+  const byName = state.hermanos.find(h => personNamesMatch(h.nombre, state.publisher.nombre));
+  if (byName) {
+    state.publisher.hermanoId = byName.id;
+    state.publisher.nombre = byName.nombre;
+    notify();
+    return true;
+  }
+  state.publisher = {
+    authenticated: false,
+    hermanoId: null,
+    nombre: null,
+    remembered: false
+  };
+  if (!isAdminAuthenticated()) {
+    state.ui.gateError = 'Tu sesión guardada ya no coincide con la lista actual de publicadores. Ingresa nuevamente.';
+  }
+  notify();
+  return false;
 }
 
 export function setAdminSession(session) {
@@ -222,7 +356,54 @@ export function setAdminSession(session) {
   };
   if (!state.admin.authenticated) {
     state.ui.towerClickMode = 'toggle';
+    if (state.publisher.authenticated && (state.ui.activeTab === 'hermanos' || state.ui.activeTab === 'admin')) {
+      state.ui.activeTab = 'mis-asignaciones';
+    }
+  } else {
+    state.ui.gateError = '';
+    if (state.ui.activeTab === 'mis-asignaciones') {
+      state.ui.activeTab = 'territorios';
+    }
   }
+  notify();
+}
+
+export function setRemoteReportes(rawReportes) {
+  const normalized = normalizeReportesList(rawReportes, state.condominios, state.hermanos);
+  const resolvedSet = new Set(state.resolvedReportIds);
+  state.reportes = normalized.filter(r => !resolvedSet.has(r.id));
+
+  // Si un reporte local ya aparece en remoto, limpiar la copia local redundante
+  const remoteDeptos = new Set(state.reportes.map(r => `${r.deptoId}::${r.hermanoId}`));
+  state.localPendingReports = (state.localPendingReports || []).filter(
+    r => !remoteDeptos.has(`${r.deptoId}::${r.hermanoId}`) && !resolvedSet.has(r.id)
+  );
+  notify();
+}
+
+export function setLocalPendingReportsState(rawReports) {
+  state.localPendingReports = (Array.isArray(rawReports) ? rawReports : []).map(r => ({
+    ...r,
+    isLocalOnly: true
+  }));
+}
+
+export function upsertLocalPendingReport(report) {
+  const next = (state.localPendingReports || []).filter(
+    r => !(r.deptoId === report.deptoId && r.hermanoId === report.hermanoId)
+  );
+  next.push({ ...report, isLocalOnly: true });
+  state.localPendingReports = next;
+  notify();
+}
+
+export function removePendingReportForPublisher(deptoId, hermanoId) {
+  state.reportes = (state.reportes || []).filter(
+    r => !(r.deptoId === deptoId && r.hermanoId === hermanoId)
+  );
+  state.localPendingReports = (state.localPendingReports || []).filter(
+    r => !(r.deptoId === deptoId && r.hermanoId === hermanoId)
+  );
   notify();
 }
 
@@ -275,62 +456,141 @@ export function getTowerByIds(condoId, edificioId) {
   return { condo, edificio };
 }
 
-export function getTowerStats(edificio) {
+export function getVisiblePendingReports() {
+  const isAdmin = isAdminAuthenticated();
+  const currentPubId = state.publisher?.hermanoId || null;
+  const resolvedSet = new Set(state.resolvedReportIds || []);
+
+  const validRemote = normalizeReportesList(state.reportes, state.condominios, state.hermanos);
+  const validLocal = normalizeReportesList(state.localPendingReports, state.condominios, state.hermanos)
+    .map(r => ({ ...r, isLocalOnly: true }));
+
+  const byDepto = new Map();
+  validRemote.forEach(r => {
+    if (!resolvedSet.has(r.id)) {
+      byDepto.set(r.deptoId, r);
+    }
+  });
+  validLocal.forEach(r => {
+    if (!resolvedSet.has(r.id) && !byDepto.has(r.deptoId)) {
+      byDepto.set(r.deptoId, r);
+    }
+  });
+
+  let list = Array.from(byDepto.values());
+  if (!isAdmin) {
+    if (!currentPubId) return [];
+    list = list.filter(r => r.hermanoId === currentPubId);
+  }
+
+  return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+export function getPendingReportForDepto(deptoId) {
+  if (!deptoId) return null;
+  return getVisiblePendingReports().find(r => r.deptoId === deptoId) || null;
+}
+
+export function getTowerStats(edificio, { forHermanoId = null } = {}) {
   const deptos = edificio?.deptos || [];
+  if (forHermanoId) {
+    const mine = deptos.filter(d => !d.excluido && d.asignadoId === forHermanoId);
+    const pendingReports = new Set(getVisiblePendingReports().map(r => r.deptoId));
+    const completados = mine.filter(d => d.estado === 'completado').length;
+    const enRevision = mine.filter(d => d.estado !== 'completado' && pendingReports.has(d.id)).length;
+    const pendientes = mine.length - completados - enRevision;
+    const porcentaje = mine.length > 0 ? Math.round((completados / mine.length) * 100) : 0;
+    return {
+      total: mine.length,
+      excluidos: 0,
+      activos: mine.length,
+      completados,
+      enRevision,
+      pendientes,
+      asignados: mine.length,
+      porcentaje
+    };
+  }
+
   const total = deptos.length;
   const excluidos = deptos.filter(d => d.excluido).length;
   const activos = deptos.filter(d => !d.excluido);
   const completados = activos.filter(d => d.estado === 'completado').length;
   const asignados = activos.filter(d => Boolean(d.asignadoId || d.asignadoA)).length;
+  const pendingReports = new Set(getVisiblePendingReports().map(r => r.deptoId));
+  const enRevision = activos.filter(d => d.estado !== 'completado' && pendingReports.has(d.id)).length;
   const porcentaje = activos.length > 0 ? Math.round((completados / activos.length) * 100) : 0;
-  return { total, excluidos, activos: activos.length, completados, asignados, porcentaje };
+  return { total, excluidos, activos: activos.length, completados, enRevision, asignados, porcentaje };
 }
 
-export function getCondoStats(condo) {
+export function getCondoStats(condo, { forHermanoId = null } = {}) {
   const edificios = condo?.edificios || [];
   let totalDeptos = 0;
   let activos = 0;
   let completados = 0;
+  let enRevision = 0;
   let excluidos = 0;
+  let totalTorres = 0;
 
   edificios.forEach(e => {
-    const s = getTowerStats(e);
+    const s = getTowerStats(e, { forHermanoId });
+    if (forHermanoId && s.activos === 0) return;
+    totalTorres++;
     totalDeptos += s.total;
     activos += s.activos;
     completados += s.completados;
+    enRevision += s.enRevision || 0;
     excluidos += s.excluidos;
   });
 
   const porcentaje = activos > 0 ? Math.round((completados / activos) * 100) : 0;
   return {
-    totalTorres: edificios.length,
+    totalTorres,
     totalDeptos,
     activos,
     completados,
+    enRevision,
     excluidos,
     porcentaje
   };
 }
 
+export function getPublisherCondos(hermanoId) {
+  if (!hermanoId) return [];
+  return state.condominios.filter(condo =>
+    condo.edificios.some(edif =>
+      edif.deptos.some(d => !d.excluido && d.asignadoId === hermanoId)
+    )
+  );
+}
+
 export function getPublisherSummary(hermanoId) {
   let pendientes = 0;
+  let enRevision = 0;
   let completados = 0;
   let fijos = 0;
   const grupos = [];
+  const pendingMap = new Map(getVisiblePendingReports().map(r => [r.deptoId, r]));
 
   state.condominios.forEach(condo => {
     condo.edificios.forEach(edif => {
       const deptos = edif.deptos.filter(d => !d.excluido && d.asignadoId === hermanoId);
       if (deptos.length > 0) {
         deptos.forEach(d => {
-          if (d.estado === 'completado') completados++;
-          else pendientes++;
+          if (d.estado === 'completado') {
+            completados++;
+          } else if (pendingMap.has(d.id)) {
+            enRevision++;
+          } else {
+            pendientes++;
+          }
           if (d.fijo) fijos++;
         });
         grupos.push({
           condoId: condo.id,
           condoNombre: condo.nombre,
           condoDireccion: condo.direccion,
+          condoNotas: condo.notas,
           edificioId: edif.id,
           edificioNombre: edif.nombre,
           deptos
@@ -339,7 +599,7 @@ export function getPublisherSummary(hermanoId) {
     });
   });
 
-  return { pendientes, completados, fijos, total: pendientes + completados, grupos };
+  return { pendientes, enRevision, completados, fijos, total: pendientes + enRevision + completados, grupos };
 }
 
 /* ==========================================================================
@@ -372,15 +632,106 @@ export function upsertCondominioAdmin(condoId, payload) {
   notify();
 }
 
+function resolvePendingReportsForDeptoIds(deptoIds) {
+  const idSet = new Set(Array.isArray(deptoIds) ? deptoIds : [deptoIds]);
+  if (idSet.size === 0) return;
+
+  const resolvedSet = new Set(state.resolvedReportIds || []);
+  (state.reportes || []).forEach(r => {
+    if (idSet.has(r.deptoId)) resolvedSet.add(r.id);
+  });
+  state.resolvedReportIds = Array.from(resolvedSet);
+  state.reportes = (state.reportes || []).filter(r => !idSet.has(r.deptoId));
+  state.localPendingReports = (state.localPendingReports || []).filter(r => !idSet.has(r.deptoId));
+}
+
+export function approveReportAdmin(reportId) {
+  assertAdmin();
+  const report = getVisiblePendingReports().find(r => r.id === reportId);
+  if (!report) return false;
+
+  const { edificio } = getTowerByIds(report.condoId, report.edificioId);
+  const depto = edificio?.deptos?.find(d => d.id === report.deptoId);
+  if (depto && !depto.excluido) {
+    depto.estado = 'completado';
+    depto.fechaEstado = new Date().toISOString();
+    if (report.nota && !depto.nota) {
+      depto.nota = report.nota;
+    }
+  }
+
+  if (!state.resolvedReportIds.includes(report.id)) {
+    state.resolvedReportIds.push(report.id);
+  }
+  state.reportes = (state.reportes || []).filter(r => r.id !== report.id && r.deptoId !== report.deptoId);
+  state.localPendingReports = (state.localPendingReports || []).filter(r => r.id !== report.id && r.deptoId !== report.deptoId);
+
+  markDirty();
+  notify();
+  return true;
+}
+
+export function rejectReportAdmin(reportId) {
+  assertAdmin();
+  const report = getVisiblePendingReports().find(r => r.id === reportId);
+  if (!report) return false;
+
+  const wasRemote = (state.reportes || []).some(r => r.id === report.id);
+  if (!state.resolvedReportIds.includes(report.id)) {
+    state.resolvedReportIds.push(report.id);
+  }
+  state.reportes = (state.reportes || []).filter(r => r.id !== report.id && r.deptoId !== report.deptoId);
+  state.localPendingReports = (state.localPendingReports || []).filter(r => r.id !== report.id && r.deptoId !== report.deptoId);
+
+  if (wasRemote) {
+    markDirty();
+  }
+  notify();
+  return true;
+}
+
+export function approveAllReportsAdmin() {
+  assertAdmin();
+  const list = getVisiblePendingReports();
+  if (list.length === 0) return 0;
+
+  const now = new Date().toISOString();
+  let count = 0;
+
+  list.forEach(report => {
+    const { edificio } = getTowerByIds(report.condoId, report.edificioId);
+    const depto = edificio?.deptos?.find(d => d.id === report.deptoId);
+    if (depto && !depto.excluido) {
+      depto.estado = 'completado';
+      depto.fechaEstado = now;
+      if (report.nota && !depto.nota) {
+        depto.nota = report.nota;
+      }
+      count++;
+    }
+    if (!state.resolvedReportIds.includes(report.id)) {
+      state.resolvedReportIds.push(report.id);
+    }
+  });
+
+  state.reportes = [];
+  state.localPendingReports = [];
+  markDirty();
+  notify();
+  return count;
+}
+
 export function deleteCondominioAdmin(condoId) {
   assertAdmin();
   const condo = getCondoById(condoId);
   if (!condo) return;
   const towerIds = new Set(condo.edificios.map(e => e.id));
+  const deptoIds = condo.edificios.flatMap(e => e.deptos.map(d => d.id));
   state.condominios = state.condominios.filter(c => c.id !== condoId);
   state.hermanos.forEach(h => {
     if (towerIds.has(h.torreAsignada)) h.torreAsignada = 'todas';
   });
+  resolvePendingReportsForDeptoIds(deptoIds);
   if (state.ui.condoOperativoId === condoId) {
     state.ui.condoOperativoId = null;
     state.ui.torreOperativaId = null;
@@ -476,10 +827,13 @@ export function deleteEdificioAdmin(condoId, edificioId) {
   assertAdmin();
   const condo = getCondoById(condoId);
   if (!condo) return;
+  const edif = condo.edificios.find(e => e.id === edificioId);
+  const deptoIds = edif ? edif.deptos.map(d => d.id) : [];
   condo.edificios = condo.edificios.filter(e => e.id !== edificioId);
   state.hermanos.forEach(h => {
     if (h.torreAsignada === edificioId) h.torreAsignada = 'todas';
   });
+  resolvePendingReportsForDeptoIds(deptoIds);
   if (state.ui.torreOperativaId === edificioId) {
     state.ui.torreOperativaId = null;
   }
@@ -502,8 +856,9 @@ export function upsertHermanoAdmin(hermanoId, payload) {
   const nombre = String(payload.nombre || '').trim();
   if (!nombre) throw new Error('El nombre del publicador es obligatorio.');
 
+  const normNombre = normalizePersonName(nombre);
   const duplicate = state.hermanos.find(
-    h => h.id !== hermanoId && h.nombre.toLowerCase() === nombre.toLowerCase()
+    h => h.id !== hermanoId && normalizePersonName(h.nombre) === normNombre
   );
   if (duplicate) {
     throw new Error(`Ya existe un publicador registrado con el nombre "${nombre}".`);
@@ -520,6 +875,9 @@ export function upsertHermanoAdmin(hermanoId, payload) {
     h.contacto = contacto;
     h.torreAsignada = torreAsignada;
     h.colorId = colorId;
+    if (state.publisher.hermanoId === h.id) {
+      state.publisher.nombre = h.nombre;
+    }
   } else {
     state.hermanos.push({
       id: generateId('h'),
@@ -543,6 +901,7 @@ export function deleteHermanoAdmin(hermanoId) {
 
   // Limpiar referencias en departamentos asignados
   let liberados = 0;
+  const affectedDeptoIds = [];
   state.condominios.forEach(c => {
     c.edificios.forEach(e => {
       e.deptos.forEach(d => {
@@ -550,12 +909,14 @@ export function deleteHermanoAdmin(hermanoId) {
           d.asignadoId = null;
           d.asignadoA = null;
           d.fijo = false;
+          affectedDeptoIds.push(d.id);
           liberados++;
         }
       });
     });
   });
 
+  resolvePendingReportsForDeptoIds(affectedDeptoIds);
   markDirty();
   notify();
   return liberados;
@@ -568,7 +929,16 @@ export function toggleEstadoDeptoAdmin(condoId, edificioId, deptoId) {
   const depto = edificio.deptos.find(d => d.id === deptoId);
   if (!depto || depto.excluido) return;
 
-  depto.estado = depto.estado === 'pendiente' ? 'completado' : 'pendiente';
+  const hadPending = Boolean(getPendingReportForDepto(deptoId));
+  if (hadPending && depto.estado === 'pendiente') {
+    depto.estado = 'completado';
+    resolvePendingReportsForDeptoIds([deptoId]);
+  } else {
+    depto.estado = depto.estado === 'pendiente' ? 'completado' : 'pendiente';
+    if (depto.estado === 'completado') {
+      resolvePendingReportsForDeptoIds([deptoId]);
+    }
+  }
   depto.fechaEstado = new Date().toISOString();
   markDirty();
   notify();
@@ -581,6 +951,7 @@ export function updateDeptoDetalleAdmin(condoId, edificioId, deptoId, payload) {
   const depto = edificio.deptos.find(d => d.id === deptoId);
   if (!depto) throw new Error('Departamento no encontrado.');
 
+  const prevAsignadoId = depto.asignadoId;
   const excluido = Boolean(payload.excluido);
   depto.excluido = excluido;
   depto.motivoExcluido = excluido ? (String(payload.motivoExcluido || 'Deshabitado').trim() || 'Deshabitado') : null;
@@ -600,6 +971,10 @@ export function updateDeptoDetalleAdmin(condoId, edificioId, deptoId, payload) {
   depto.nota = String(payload.nota || '').trim();
   depto.fechaEstado = new Date().toISOString();
 
+  if (depto.excluido || depto.estado === 'completado' || depto.asignadoId !== prevAsignadoId) {
+    resolvePendingReportsForDeptoIds([deptoId]);
+  }
+
   markDirty();
   notify();
 }
@@ -609,6 +984,7 @@ export function saveExclusionesAdmin(condoId, edificioId, exclusionesMap) {
   const { edificio } = getTowerByIds(condoId, edificioId);
   if (!edificio) throw new Error('Torre no encontrada.');
 
+  const excludedIds = [];
   edificio.deptos.forEach(d => {
     const entry = exclusionesMap[d.id];
     if (entry && entry.excluido) {
@@ -617,12 +993,14 @@ export function saveExclusionesAdmin(condoId, edificioId, exclusionesMap) {
       d.asignadoId = null;
       d.asignadoA = null;
       d.fijo = false;
+      excludedIds.push(d.id);
     } else {
       d.excluido = false;
       d.motivoExcluido = null;
     }
   });
 
+  resolvePendingReportsForDeptoIds(excludedIds);
   markDirty();
   notify();
 }
@@ -651,15 +1029,18 @@ export function clearAsignacionesTorreAdmin(condoId, edificioId, incluirFijos = 
   if (!edificio) return 0;
 
   let count = 0;
+  const affectedIds = [];
   edificio.deptos.forEach(d => {
     if (d.asignadoId && (incluirFijos || !d.fijo)) {
       d.asignadoId = null;
       d.asignadoA = null;
       if (incluirFijos) d.fijo = false;
+      affectedIds.push(d.id);
       count++;
     }
   });
 
+  resolvePendingReportsForDeptoIds(affectedIds);
   markDirty();
   notify();
   return count;
@@ -670,10 +1051,12 @@ export function resetCicloTorreAdmin(condoId, edificioId, limpiarAsignaciones = 
   const { edificio } = getTowerByIds(condoId, edificioId);
   if (!edificio) return;
 
+  const affectedIds = [];
   edificio.deptos.forEach(d => {
     if (!d.excluido) {
       d.estado = 'pendiente';
       d.fechaEstado = null;
+      affectedIds.push(d.id);
       if (limpiarAsignaciones && !d.fijo) {
         d.asignadoId = null;
         d.asignadoA = null;
@@ -681,6 +1064,7 @@ export function resetCicloTorreAdmin(condoId, edificioId, limpiarAsignaciones = 
     }
   });
 
+  resolvePendingReportsForDeptoIds(affectedIds);
   markDirty();
   notify();
 }
@@ -715,12 +1099,15 @@ export function replaceAllDataAdmin(rawDataset) {
   const norm = normalizeDataset({
     condominios: rawDataset.condominios ?? state.condominios,
     hermanos: rawDataset.hermanos ?? state.hermanos,
-    configuracion: rawDataset.configuracion ?? state.configuracion
+    configuracion: rawDataset.configuracion ?? state.configuracion,
+    reportes: rawDataset.reportes ?? state.reportes
   });
 
   state.condominios = norm.condominios;
   state.hermanos = norm.hermanos;
   state.configuracion = norm.configuracion;
+  state.reportes = norm.reportes;
+  state.resolvedReportIds = [];
   state.ui.condoOperativoId = null;
   state.ui.torreOperativaId = null;
   markDirty();

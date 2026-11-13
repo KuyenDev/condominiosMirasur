@@ -5,7 +5,7 @@
  * - Nunca intercepta ni cachea peticiones a api.github.com.
  */
 
-const CACHE_VERSION = 'v1.1.0';
+const CACHE_VERSION = 'v1.2.0';
 const SHELL_CACHE = `condominios-shell-${CACHE_VERSION}`;
 const DATA_CACHE = `condominios-data-${CACHE_VERSION}`;
 
@@ -30,6 +30,7 @@ const APP_SHELL_URLS = [
   './js/core/ui-feedback.js',
   './js/modules/assignments.js',
   './js/modules/modals.js',
+  './js/modules/my-assignments.js',
   './js/modules/territories.js',
   './js/modules/publishers.js',
   './js/services/storage.js',

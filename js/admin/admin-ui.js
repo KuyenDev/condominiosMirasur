@@ -2,10 +2,21 @@
  * Interfaz del Panel de Administración (Login seguro + Sincronización GitHub + Respaldos + Configuración).
  */
 
-import { isAdminAuthenticated, state, updateConfiguracionAdmin } from '../core/state.js';
+import {
+  approveAllReportsAdmin,
+  approveReportAdmin,
+  getPublisherById,
+  getVisiblePendingReports,
+  isAdminAuthenticated,
+  rejectReportAdmin,
+  setUiState,
+  state,
+  updateConfiguracionAdmin
+} from '../core/state.js';
 import { showToast } from '../core/ui-feedback.js';
 import { escapeHtml, formatDateTime, isLocalDevEnvironment } from '../core/utils.js';
 import { abrirModalCondominio, abrirModalHermano } from '../modules/modals.js';
+import { openTowerOperativeModal } from '../modules/territories.js';
 import { hasLegacyV022Data } from '../services/storage.js';
 import {
   exportFullBackupJson,
@@ -20,6 +31,7 @@ import {
   loginAdminWithGitHub,
   logoutAdmin,
   publishToGitHubAdmin,
+  refreshPendingReports,
   restorePreImportSnapshotAdmin,
   syncFromGitHubAdmin
 } from './admin.js';
@@ -62,34 +74,34 @@ export function renderAdminView() {
   }
 }
 
-function renderAdminLogin(container) {
+export function buildAdminLoginHtml({ prefix = 'tab', title = '🔐 Acceso al Panel de Administración', compact = false } = {}) {
   const repoSuggested = getSuggestedRepoValues();
   const isLocal = isLocalDevEnvironment();
   const authEndpoint = (state.configuracion?.authEndpoint || '').trim();
 
-  container.innerHTML = `
-    <div class="admin-layout">
-      <section class="admin-card admin-card--highlight">
+  return `
+    <div class="${compact ? '' : 'admin-layout'}">
+      <section class="${compact ? 'admin-gate-inner' : 'admin-card admin-card--highlight'}">
         <div>
-          <h2 class="section-title">🔐 Acceso al Panel de Administración</h2>
+          <h2 class="section-title">${escapeHtml(title)}</h2>
           <p class="section-desc">
-            Para proteger los datos de la congregación, solo el administrador autorizado puede crear, editar, eliminar o publicar territorios en GitHub.
+            Solo el administrador autorizado puede aprobar finalizaciones definitivas, asignar, editar o publicar territorios.
           </p>
         </div>
 
-        <form id="admin-account-login-form" style="display:flex; flex-direction:column; gap:0.85rem;">
+        <form id="${prefix}-admin-account-login-form" style="display:flex; flex-direction:column; gap:0.85rem;">
           <div class="notice-box notice-box--security">
-            <strong>Acceso con Usuario y Contraseña:</strong> Las cuentas autorizadas se verifican en tu servidor privado (Cloudflare Worker) y mantienen la sesión únicamente en memoria temporal, sin guardar contraseñas en archivos públicos.
+            <strong>Acceso con Usuario y Contraseña:</strong> Las cuentas autorizadas se verifican en tu servidor privado (Cloudflare Worker) y mantienen la sesión únicamente en memoria temporal.
           </div>
 
           <div class="admin-form-grid">
             <div class="field">
-              <label class="field__label" for="acc-user">Usuario *</label>
-              <input type="text" id="acc-user" class="input" autocomplete="username" placeholder="Ej. RLuna" required>
+              <label class="field__label" for="${prefix}-acc-user">Usuario *</label>
+              <input type="text" id="${prefix}-acc-user" class="input" autocomplete="username" placeholder="Ej. RLuna" required>
             </div>
             <div class="field">
-              <label class="field__label" for="acc-pass">Contraseña *</label>
-              <input type="password" id="acc-pass" class="input" autocomplete="current-password" placeholder="Ingresa tu contraseña" required>
+              <label class="field__label" for="${prefix}-acc-pass">Contraseña *</label>
+              <input type="password" id="${prefix}-acc-pass" class="input" autocomplete="current-password" placeholder="Ingresa tu contraseña" required>
             </div>
           </div>
 
@@ -97,20 +109,20 @@ function renderAdminLogin(container) {
             <details class="notice-box" style="margin:0;">
               <summary style="cursor:pointer; font-weight:600; font-size:0.85rem;">Servidor de acceso configurado ✓ (ver / cambiar URL)</summary>
               <div class="field" style="margin-top:0.65rem;">
-                <label class="field__label" for="acc-endpoint">URL del Cloudflare Worker *</label>
-                <input type="url" id="acc-endpoint" class="input" value="${escapeHtml(authEndpoint)}" placeholder="https://condominios-auth.tu-usuario.workers.dev" required>
+                <label class="field__label" for="${prefix}-acc-endpoint">URL del Cloudflare Worker *</label>
+                <input type="url" id="${prefix}-acc-endpoint" class="input" value="${escapeHtml(authEndpoint)}" placeholder="https://condominios-auth.tu-usuario.workers.dev" required>
               </div>
             </details>
           ` : `
             <div class="field">
-              <label class="field__label" for="acc-endpoint">URL del Cloudflare Worker *</label>
-              <input type="url" id="acc-endpoint" class="input" value="" placeholder="https://condominios-auth.tu-usuario.workers.dev" required>
-              <p class="field__hint">Se guarda para todos los hermanos al configurarlo en <strong>Admin ➔ Configuración</strong> tras desplegar <code>worker/cloudflare-worker.js</code>.</p>
+              <label class="field__label" for="${prefix}-acc-endpoint">URL del Cloudflare Worker *</label>
+              <input type="url" id="${prefix}-acc-endpoint" class="input" value="" placeholder="https://condominios-auth.tu-usuario.workers.dev" required>
+              <p class="field__hint">Se guarda para todos al configurarlo en <strong>Admin ➔ Configuración</strong> tras desplegar <code>worker/cloudflare-worker.js</code>.</p>
             </div>
           `}
 
           <div class="admin-actions-row">
-            <button type="submit" id="btn-acc-login" class="btn btn--primary">Ingresar con usuario y contraseña</button>
+            <button type="submit" id="${prefix}-btn-acc-login" class="btn btn--primary">Ingresar con usuario y contraseña</button>
           </div>
         </form>
 
@@ -118,67 +130,72 @@ function renderAdminLogin(container) {
           <summary style="cursor:pointer; font-weight:700;">Ingresar con Token directo de GitHub (dueño / respaldo técnico)</summary>
           <div style="display:flex; flex-direction:column; gap:0.85rem; margin-top:0.85rem;">
             <div class="notice-box notice-box--security">
-              <strong>Seguridad de credenciales:</strong> Tu token de GitHub se verifica directamente con GitHub y se mantiene <strong>únicamente en la memoria temporal de esta pestaña</strong>. Nunca se guarda en el navegador ni en archivos públicos.
+              <strong>Seguridad de credenciales:</strong> Tu token de GitHub se verifica directamente con GitHub y se mantiene <strong>únicamente en la memoria temporal de esta pestaña</strong>.
             </div>
 
-            <form id="admin-login-form" style="display:flex; flex-direction:column; gap:0.85rem;">
-          <div class="admin-form-grid">
-            <div class="field">
-              <label class="field__label" for="gh-owner">Usuario u Organización GitHub *</label>
-              <input type="text" id="gh-owner" class="input" value="${escapeHtml(repoSuggested.owner)}" placeholder="Ej. congregacion-norte" required>
-            </div>
-            <div class="field">
-              <label class="field__label" for="gh-repo">Nombre del Repositorio *</label>
-              <input type="text" id="gh-repo" class="input" value="${escapeHtml(repoSuggested.repo)}" placeholder="Ej. condominios" required>
-            </div>
-          </div>
+            <form id="${prefix}-admin-login-form" style="display:flex; flex-direction:column; gap:0.85rem;">
+              <div class="admin-form-grid">
+                <div class="field">
+                  <label class="field__label" for="${prefix}-gh-owner">Usuario u Organización GitHub *</label>
+                  <input type="text" id="${prefix}-gh-owner" class="input" value="${escapeHtml(repoSuggested.owner)}" placeholder="Ej. KuyenDev" required>
+                </div>
+                <div class="field">
+                  <label class="field__label" for="${prefix}-gh-repo">Nombre del Repositorio *</label>
+                  <input type="text" id="${prefix}-gh-repo" class="input" value="${escapeHtml(repoSuggested.repo)}" placeholder="Ej. condominiosMirasur" required>
+                </div>
+              </div>
 
-          <div class="admin-form-grid">
-            <div class="field">
-              <label class="field__label" for="gh-branch">Rama (Branch)</label>
-              <input type="text" id="gh-branch" class="input" value="${escapeHtml(repoSuggested.branch || 'main')}" placeholder="main" required>
-            </div>
-            <div class="field">
-              <label class="field__label" for="gh-token">Token de Acceso GitHub (Fine-Grained PAT) *</label>
-              <input type="password" id="gh-token" class="input" autocomplete="off" placeholder="github_pat_..." required>
-            </div>
-          </div>
+              <div class="admin-form-grid">
+                <div class="field">
+                  <label class="field__label" for="${prefix}-gh-branch">Rama (Branch)</label>
+                  <input type="text" id="${prefix}-gh-branch" class="input" value="${escapeHtml(repoSuggested.branch || 'main')}" placeholder="main" required>
+                </div>
+                <div class="field">
+                  <label class="field__label" for="${prefix}-gh-token">Token de Acceso GitHub (Fine-Grained PAT) *</label>
+                  <input type="password" id="${prefix}-gh-token" class="input" autocomplete="off" placeholder="github_pat_..." required>
+                </div>
+              </div>
 
-          <div class="admin-actions-row">
-            <button type="submit" id="btn-gh-login" class="btn btn--primary">Ingresar y conectar con GitHub</button>
-            ${isLocal ? `<button type="button" id="btn-local-dev-login" class="btn btn--secondary">Entrar en Modo Pruebas Local (solo localhost)</button>` : ''}
-          </div>
-        </form>
+              <div class="admin-actions-row">
+                <button type="submit" id="${prefix}-btn-gh-login" class="btn btn--primary">Ingresar y conectar con GitHub</button>
+                ${isLocal ? `<button type="button" id="${prefix}-btn-local-dev-login" class="btn btn--secondary">Entrar en Modo Pruebas Local (solo localhost)</button>` : ''}
+              </div>
+            </form>
 
-        <details class="notice-box">
-          <summary style="cursor:pointer; font-weight:700;">¿Cómo obtener el token en 1 minuto?</summary>
-          <ol class="help-steps" style="margin-top:0.65rem;">
-            <li>Entra a tu cuenta de GitHub ➔ <strong>Settings</strong> ➔ <strong>Developer settings</strong> ➔ <strong>Personal access tokens</strong> ➔ <strong>Fine-grained tokens</strong>.</li>
-            <li>Haz clic en <strong>Generate new token</strong>.</li>
-            <li>En <em>Repository access</em>, elige <strong>Only select repositories</strong> y selecciona únicamente este repositorio.</li>
-            <li>En <em>Permissions ➔ Repository permissions</em>, activa <strong>Contents: Read and write</strong>.</li>
-            <li>Copia el token generado y pégalo arriba al iniciar sesión como administrador.</li>
-          </ol>
-        </details>
+            <details class="notice-box">
+              <summary style="cursor:pointer; font-weight:700;">¿Cómo obtener el token en 1 minuto?</summary>
+              <ol class="help-steps" style="margin-top:0.65rem;">
+                <li>Entra a tu cuenta de GitHub ➔ <strong>Settings</strong> ➔ <strong>Developer settings</strong> ➔ <strong>Personal access tokens</strong> ➔ <strong>Fine-grained tokens</strong>.</li>
+                <li>Haz clic en <strong>Generate new token</strong>.</li>
+                <li>En <em>Repository access</em>, elige <strong>Only select repositories</strong> y selecciona únicamente este repositorio.</li>
+                <li>En <em>Permissions ➔ Repository permissions</em>, activa <strong>Contents: Read and write</strong>.</li>
+                <li>Copia el token generado y pégalo arriba al iniciar sesión como administrador.</li>
+              </ol>
+            </details>
           </div>
         </details>
       </section>
     </div>
   `;
+}
 
-  document.getElementById('admin-account-login-form')?.addEventListener('submit', async e => {
+export function bindAdminLoginEvents({ prefix = 'tab', onSuccess = null } = {}) {
+  document.getElementById(`${prefix}-admin-account-login-form`)?.addEventListener('submit', async e => {
     e.preventDefault();
-    const btn = document.getElementById('btn-acc-login');
-    const endpoint = document.getElementById('acc-endpoint').value.trim();
-    const username = document.getElementById('acc-user').value.trim();
-    const password = document.getElementById('acc-pass').value;
+    const btn = document.getElementById(`${prefix}-btn-acc-login`);
+    const endpoint = document.getElementById(`${prefix}-acc-endpoint`).value.trim();
+    const username = document.getElementById(`${prefix}-acc-user`).value.trim();
+    const password = document.getElementById(`${prefix}-acc-pass`).value;
 
     btn.disabled = true;
     btn.textContent = 'Verificando credenciales...';
 
     try {
       const info = await loginAdminWithAccount({ endpoint, username, password });
-      showToast(`Sesión iniciada como ${info.username}.`, 'success');
+      const pendingCount = getVisiblePendingReports().length;
+      const pendingNote = pendingCount > 0 ? ` Tienes ${pendingCount} reporte(s) por revisar.` : '';
+      showToast(`Sesión iniciada como ${info.username}.${pendingNote}`, 'success', 5000);
+      if (typeof onSuccess === 'function') onSuccess();
     } catch (err) {
       showToast(err.message || 'Usuario o contraseña incorrectos.', 'error', 5000);
     } finally {
@@ -189,20 +206,23 @@ function renderAdminLogin(container) {
     }
   });
 
-  document.getElementById('admin-login-form')?.addEventListener('submit', async e => {
+  document.getElementById(`${prefix}-admin-login-form`)?.addEventListener('submit', async e => {
     e.preventDefault();
-    const btn = document.getElementById('btn-gh-login');
-    const owner = document.getElementById('gh-owner').value.trim();
-    const repo = document.getElementById('gh-repo').value.trim();
-    const branch = document.getElementById('gh-branch').value.trim() || 'main';
-    const token = document.getElementById('gh-token').value.trim();
+    const btn = document.getElementById(`${prefix}-btn-gh-login`);
+    const owner = document.getElementById(`${prefix}-gh-owner`).value.trim();
+    const repo = document.getElementById(`${prefix}-gh-repo`).value.trim();
+    const branch = document.getElementById(`${prefix}-gh-branch`).value.trim() || 'main';
+    const token = document.getElementById(`${prefix}-gh-token`).value.trim();
 
     btn.disabled = true;
     btn.textContent = 'Verificando permisos...';
 
     try {
       const info = await loginAdminWithGitHub({ owner, repo, branch, token });
-      showToast(`Sesión iniciada como ${info.username}.`, 'success');
+      const pendingCount = getVisiblePendingReports().length;
+      const pendingNote = pendingCount > 0 ? ` Tienes ${pendingCount} reporte(s) por revisar.` : '';
+      showToast(`Sesión iniciada como ${info.username}.${pendingNote}`, 'success', 5000);
+      if (typeof onSuccess === 'function') onSuccess();
     } catch (err) {
       showToast(err.message || 'No se pudo autenticar con GitHub.', 'error', 5000);
     } finally {
@@ -213,18 +233,26 @@ function renderAdminLogin(container) {
     }
   });
 
-  document.getElementById('btn-local-dev-login')?.addEventListener('click', () => {
+  document.getElementById(`${prefix}-btn-local-dev-login`)?.addEventListener('click', () => {
     try {
       loginAdminLocalDev();
       showToast('Modo pruebas local activado (cambios no se suben a GitHub).', 'info');
+      if (typeof onSuccess === 'function') onSuccess();
     } catch (err) {
       showToast(err.message, 'error');
     }
   });
 }
 
+function renderAdminLogin(container) {
+  container.innerHTML = buildAdminLoginHtml({ prefix: 'tab' });
+  bindAdminLoginEvents({ prefix: 'tab' });
+}
+
 function renderAdminDashboard(container) {
   const stats = getGlobalStats();
+  const pendingReports = getVisiblePendingReports();
+  const authEndpoint = (state.configuracion?.authEndpoint || '').trim();
   const isRemoteSyncMode = state.admin.mode === 'github' || state.admin.mode === 'proxy';
   const authModeLabel = state.admin.mode === 'proxy'
     ? 'Cuenta autorizada'
@@ -242,6 +270,83 @@ function renderAdminDashboard(container) {
   const repoPrivacyText = state.sync.repoPrivate === true
     ? 'Repositorio Privado'
     : (state.sync.repoPrivate === false ? 'Repositorio Público (protección de teléfonos activa)' : 'Visibilidad no verificada');
+
+  const reviewSectionHtml = `
+      <section class="admin-card ${pendingReports.length > 0 ? 'admin-card--attention' : ''}">
+        <div class="admin-header-bar">
+          <div>
+            <h3 class="section-title" style="font-size:1.05rem;">🔔 Notificaciones y revisión de publicadores</h3>
+            <p class="section-desc">
+              Los departamentos marcados por publicadores quedan en espera hasta que un administrador confirme la finalización definitiva.
+            </p>
+          </div>
+          ${pendingReports.length > 0
+            ? `<span class="admin-status-pill admin-status-pill--pending">● ${pendingReports.length} pendiente(s)</span>`
+            : `<span class="admin-status-pill admin-status-pill--online">✓ Sin pendientes</span>`}
+        </div>
+
+        ${state.ui.workerOutdated ? `
+          <div class="notice-box notice-box--warning">
+            <strong>Worker desactualizado:</strong> Tu servidor Cloudflare Worker necesita el nuevo código de <code>worker/cloudflare-worker.js</code> para sincronizar reportes de publicadores entre dispositivos.
+          </div>
+        ` : (!authEndpoint && isRemoteSyncMode ? `
+          <div class="notice-box">
+            Configura la URL del <strong>Cloudflare Worker</strong> en Configuración para recibir aquí los reportes enviados desde otros dispositivos en tiempo real.
+          </div>
+        ` : '')}
+
+        <div class="admin-actions-row">
+          <button type="button" id="btn-refresh-reports" class="btn btn--secondary btn--sm">↻ Buscar reportes</button>
+          ${pendingReports.length > 0 ? `
+            <button type="button" id="btn-approve-all-reports" class="btn btn--success btn--sm">✅ Aprobar todos (${pendingReports.length})</button>
+          ` : ''}
+          ${dirty > 0 && isRemoteSyncMode ? `
+            <button type="button" id="btn-publish-from-reviews" class="btn btn--primary btn--sm">☁️ Publicar cambios en GitHub (${dirty})</button>
+          ` : ''}
+        </div>
+
+        ${pendingReports.length === 0 ? `
+          <p class="field__hint" style="margin:0;">✓ Todo al día. No hay departamentos pendientes de revisión.</p>
+        ` : `
+          <div class="review-list">
+            ${pendingReports.map(rep => {
+              const pubColor = getPublisherById(rep.hermanoId)?.color || rep.hermanoColor || '#2563eb';
+              const locationTitle = [
+                rep.condoNombre || 'Condominio',
+                rep.edificioNombre || 'Torre'
+              ].filter(Boolean).join(' — ');
+              return `
+                <article class="review-item">
+                  <div class="review-item__body">
+                    <div class="review-item__top">
+                      <span class="review-item__publisher">
+                        <span class="pub-dot" style="background-color:${escapeHtml(pubColor)};"></span>
+                        <strong>${escapeHtml(rep.hermanoNombre || 'Publicador')}</strong>
+                      </span>
+                      <span class="review-item__meta">
+                        🕒 ${escapeHtml(formatDateTime(rep.createdAt))}
+                        ${rep.isLocalOnly ? '<span class="review-item__badge">Solo este dispositivo</span>' : ''}
+                      </span>
+                    </div>
+                    <div class="review-item__location">
+                      ${escapeHtml(locationTitle)} — <strong>Depto ${escapeHtml(rep.deptoNumero || rep.deptoId)}</strong>${rep.piso != null ? ` (Piso ${escapeHtml(String(rep.piso))})` : ''}
+                    </div>
+                    ${rep.nota ? `<p class="review-item__note">“${escapeHtml(rep.nota)}”</p>` : ''}
+                  </div>
+                  <div class="review-item__actions">
+                    <button type="button" class="btn btn--success btn--sm" data-approve-report="${escapeHtml(rep.id)}">✅ Aprobar</button>
+                    <button type="button" class="btn btn--soft btn--sm" data-reject-report="${escapeHtml(rep.id)}">↩️ Rechazar</button>
+                    ${rep.condoId && rep.edificioId ? `
+                      <button type="button" class="btn btn--secondary btn--sm" data-jump-report-tower="${escapeHtml(rep.condoId)}::${escapeHtml(rep.edificioId)}">👁️ Ver torre</button>
+                    ` : ''}
+                  </div>
+                </article>
+              `;
+            }).join('')}
+          </div>
+        `}
+      </section>
+  `;
 
   container.innerHTML = `
     <div class="admin-layout">
@@ -272,6 +377,10 @@ function renderAdminDashboard(container) {
             <span class="stat-tile__label">Deptos trabajados</span>
           </div>
           <div class="stat-tile">
+            <span class="stat-tile__value">${pendingReports.length}</span>
+            <span class="stat-tile__label">Por revisar</span>
+          </div>
+          <div class="stat-tile">
             <span class="stat-tile__value">${stats.hermanos}</span>
             <span class="stat-tile__label">Publicadores</span>
           </div>
@@ -300,6 +409,8 @@ function renderAdminDashboard(container) {
           ${state.sync.lastCommitSha ? ` • Commit: <code>${escapeHtml(state.sync.lastCommitSha.slice(0, 7))}</code>` : ''}
         </p>
       </section>
+
+      ${reviewSectionHtml}
 
       <div class="admin-grid">
         <!-- Acciones rápidas y migración -->
@@ -478,6 +589,68 @@ function renderAdminDashboard(container) {
     }
   });
 
+  document.getElementById('btn-refresh-reports')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-refresh-reports');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Buscando reportes...';
+    }
+    try {
+      await refreshPendingReports({ notifyNew: false });
+      const count = getVisiblePendingReports().length;
+      if (state.ui.workerOutdated) {
+        showToast('El Worker remoto necesita actualizarse para consultar reportes.', 'warning', 5000);
+      } else if (count > 0) {
+        showToast(`Hay ${count} reporte(s) pendiente(s) de revisión.`, 'info', 4000);
+      } else {
+        showToast('Sin nuevos reportes pendientes de revisión.', 'success', 3000);
+      }
+    } finally {
+      if (btn && document.body.contains(btn)) {
+        btn.disabled = false;
+        btn.textContent = '↻ Buscar reportes';
+      }
+    }
+  });
+
+  document.getElementById('btn-approve-all-reports')?.addEventListener('click', () => {
+    const approvedCount = approveAllReportsAdmin();
+    if (approvedCount > 0) {
+      showToast(`Se aprobaron ${approvedCount} departamento(s). Recuerda publicar los cambios en GitHub.`, 'success', 5000);
+    }
+  });
+
+  document.getElementById('btn-publish-from-reviews')?.addEventListener('click', () => {
+    document.getElementById('btn-publish-github')?.click();
+  });
+
+  container.querySelectorAll('[data-approve-report]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ok = approveReportAdmin(btn.dataset.approveReport);
+      if (ok) {
+        showToast('Departamento confirmado como finalizado definitivo. Recuerda publicar cambios.', 'success', 4500);
+      }
+    });
+  });
+
+  container.querySelectorAll('[data-reject-report]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ok = rejectReportAdmin(btn.dataset.rejectReport);
+      if (ok) {
+        showToast('Reporte rechazado. El departamento regresó a pendiente.', 'info', 4000);
+      }
+    });
+  });
+
+  container.querySelectorAll('[data-jump-report-tower]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const [condoId, edificioId] = (btn.dataset.jumpReportTower || '').split('::');
+      if (!condoId || !edificioId) return;
+      setUiState({ activeTab: 'territorios' });
+      openTowerOperativeModal(condoId, edificioId);
+    });
+  });
+
   document.getElementById('admin-quick-condo')?.addEventListener('click', () => abrirModalCondominio());
   document.getElementById('admin-quick-hermano')?.addEventListener('click', () => abrirModalHermano());
 
@@ -498,7 +671,7 @@ function renderAdminDashboard(container) {
 
   document.getElementById('btn-export-split')?.addEventListener('click', () => {
     exportIndividualDataFiles();
-    showToast('Archivos condominios.json, hermanos.json y configuracion.json descargados.', 'success');
+    showToast('Archivos condominios.json, hermanos.json, configuracion.json y reportes.json descargados.', 'success');
   });
 
   document.getElementById('input-import-backup')?.addEventListener('change', async e => {

@@ -18,28 +18,32 @@ async function fetchJsonSafe(relativePath) {
  * Carga los archivos JSON oficiales desde ./data/ usando rutas relativas.
  */
 export async function loadRemoteJsonFiles() {
-  const [condosRes, hermanosRes, configRes] = await Promise.all([
+  const [condosRes, hermanosRes, configRes, reportesRes] = await Promise.all([
     fetchJsonSafe('./data/condominios.json'),
     fetchJsonSafe('./data/hermanos.json'),
-    fetchJsonSafe('./data/configuracion.json').catch(() => cloneDeep(DEFAULT_CONFIG))
+    fetchJsonSafe('./data/configuracion.json').catch(() => cloneDeep(DEFAULT_CONFIG)),
+    fetchJsonSafe('./data/reportes.json').catch(() => ({ version: 1, updatedAt: null, reportes: [] }))
   ]);
 
   const condominios = Array.isArray(condosRes) ? condosRes : (condosRes?.condominios || []);
   const hermanos = Array.isArray(hermanosRes) ? hermanosRes : (hermanosRes?.hermanos || []);
   const configuracion = configRes && typeof configRes === 'object' ? configRes : cloneDeep(DEFAULT_CONFIG);
+  const reportes = Array.isArray(reportesRes) ? reportesRes : (reportesRes?.reportes || []);
 
-  const remoteUpdatedAt = condosRes?.updatedAt || hermanosRes?.updatedAt || configuracion?.updatedAt || null;
+  const remoteUpdatedAt =
+    condosRes?.updatedAt || hermanosRes?.updatedAt || reportesRes?.updatedAt || configuracion?.updatedAt || null;
 
   return {
     condominios,
     hermanos,
     configuracion,
+    reportes,
     remoteUpdatedAt
   };
 }
 
 /**
- * Construye los 3 documentos JSON listos para guardar en data/.
+ * Construye los documentos JSON listos para guardar en data/.
  * Si sanitizePublicPrivacy es true, omite datos personales sensibles (ej. teléfonos).
  */
 export function buildDataPayloads(stateSnapshot, { sanitizePublicPrivacy = false } = {}) {
@@ -76,10 +80,17 @@ export function buildDataPayloads(stateSnapshot, { sanitizePublicPrivacy = false
     updatedAt: now
   };
 
+  const reportesPayload = {
+    version: 1,
+    updatedAt: now,
+    reportes: cloneDeep(stateSnapshot.reportes || [])
+  };
+
   return {
     condominiosPayload,
     hermanosPayload,
     configuracionPayload,
+    reportesPayload,
     updatedAt: now
   };
 }
@@ -104,7 +115,8 @@ export function parseImportedBackup(rawText) {
     const normalized = normalizeDataset({
       condominios: parsed.condominios || [],
       hermanos: parsed.hermanos || [],
-      configuracion: parsed.configuracion || null
+      configuracion: parsed.configuracion || null,
+      reportes: parsed.reportes || []
     });
     return normalized;
   }
