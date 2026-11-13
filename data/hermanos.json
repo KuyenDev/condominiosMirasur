@@ -1,5 +1,30 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-13T00:49:01.203Z",
-  "hermanos": []
+  "updatedAt": "2026-11-13T19:06:57.732Z",
+  "hermanos": [
+    {
+      "id": "h_0f2d34f2-79c",
+      "nombre": "Carlos Miranda",
+      "torreAsignada": "todas",
+      "colorId": "indigo"
+    },
+    {
+      "id": "h_63f5358b-dac",
+      "nombre": "Rodrigo Luna",
+      "torreAsignada": "todas",
+      "colorId": "emerald"
+    },
+    {
+      "id": "h_9618ccfe-e48",
+      "nombre": "Andrea de Miranda",
+      "torreAsignada": "todas",
+      "colorId": "cyan"
+    },
+    {
+      "id": "h_6c88379b-00b",
+      "nombre": "Karina de Luna",
+      "torreAsignada": "todas",
+      "colorId": "rose"
+    }
+  ]
 }

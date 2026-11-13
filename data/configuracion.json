@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-13T00:49:01.203Z",
+  "updatedAt": "2026-11-13T19:06:57.732Z",
   "congregacion": "Congregación",
   "tituloApp": "GESTOR DE CONDOMINIOS",
   "subtituloApp": "Organización metódica de cartas y visitas en condominios y torres",
   "distanciaMinimaDefault": 2,
   "maxDeptosDefault": 5,
-  "authEndpoint": "",
+  "authEndpoint": "https://condominios-auth.fa-lunangulo.workers.dev",
   "github": {
     "owner": "KuyenDev",
     "repo": "condominiosMirasur",
